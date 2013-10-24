@@ -135,6 +135,18 @@ static char *do_read_string(int fd, struct perf_header *ph)
 	return NULL;
 }
 
+static int perf_header__getbuffer64(struct perf_header *header,
+				    int fd, void *buf, size_t size)
+{
+	if (readn(fd, buf, size) <= 0)
+		return -1;
+
+	if (header->needs_swap)
+		mem_bswap_64(buf, size);
+
+	return 0;
+}
+
 int
 perf_header__set_cmdline(int argc, const char **argv)
 {
@@ -2068,18 +2080,6 @@ int perf_session__write_header(struct perf_session *session,
 		return err;
 	}
 	lseek(fd, header->data_offset + header->data_size, SEEK_SET);
-
-	return 0;
-}
-
-static int perf_header__getbuffer64(struct perf_header *header,
-				    int fd, void *buf, size_t size)
-{
-	if (readn(fd, buf, size) <= 0)
-		return -1;
-
-	if (header->needs_swap)
-		mem_bswap_64(buf, size);
 
 	return 0;
 }
