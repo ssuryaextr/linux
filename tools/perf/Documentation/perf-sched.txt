@@ -8,11 +8,11 @@ perf-sched - Tool to trace/measure scheduler properties (latencies)
 SYNOPSIS
 --------
 [verse]
-'perf sched' {record|latency|map|replay|script}
+'perf sched' {record|latency|map|replay|script|timehist}
 
 DESCRIPTION
 -----------
-There are five variants of perf sched:
+There are several variants of perf sched:
 
   'perf sched record <command>' to record the scheduling events
   of an arbitrary workload.
@@ -36,6 +36,11 @@ There are five variants of perf sched:
   are running on a CPU. A '*' denotes the CPU that had the event, and
   a dot signals an idle CPU.
 
+  'perf sched timehist' to show context-switching analysis with times
+  between schedule-in, schedule delay, and run time. If callchains are
+  present stack trace is dumped at the end of the line. A summary of
+  run times can be shown as well.
+
 OPTIONS
 -------
 -i::
@@ -49,6 +54,60 @@ OPTIONS
 -D::
 --dump-raw-trace=::
         Display verbose dump of the sched data.
+
+TIMEHIST OPTIONS
+----------------
+-k::
+--vmlinux=<file>::
+    vmlinux pathname
+
+--kallsyms=<file>::
+    kallsyms pathname
+
+-s::
+--summary::
+    Show only a summary of scheduling by thread with min, max, and average
+    run times (in sec) and relative stddev.
+
+-S::
+--with-summary::
+    Show all scheduling events followed by a summary by thread with min,
+    max, and average run times (in sec) and relative stddev.
+
+-w::
+--wakeups::
+    Show wakeup events.
+
+-c::
+--comms=::
+    Only show events for given comms (comma separated list)
+
+-p::
+--pid=::
+    Only show events for given process ID (comma separated list).
+
+-t::
+--tid=::
+    Only show events for given thread ID (comma separated list).
+
+--call-graph::
+        Display call chains. Default is on. Use --no-call-graph to suppress
+
+--max-stack::
+    Set the stack depth limit when showing the callchains. Default: 5
+
+-x::
+--exclude-sym::
+    Symbols to skip in backtrace. Useful to compact repetitive or
+    uninteresting frames to pull more useful frames into view.
+
+--symfs=<directory>::
+    Look for files with symbols relative to this directory.
+
+-V::
+--cpu-visual::
+    Add a visual that better emphasizes activity by cpu. Idle times
+    are denoted with 'i'; schedule events with an 's'.
 
 SEE ALSO
 --------
