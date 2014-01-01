@@ -3,6 +3,10 @@
 
 u64 get_perf_clock(void);
 
+struct perf_time {
+	u64 start, end;
+};
+
 #define DEFAULT_TOD_FMT "%H:%M:%S"
 
 int perf_time__get_reftime(u64 *pclock, struct timeval *tv);
@@ -17,5 +21,10 @@ int perf_time__have_reftime(struct perf_session *session);
  * of the string created. fmt is passed to strftime.
  */
 char *perf_time__str(char *buf, int buflen, u64 t, const char *fmt);
+
+int perf_time__parse_str(struct perf_time *ptime, const char *ostr,
+			 const char *fmt);
+
+bool perf_time__skip_sample(struct perf_time *ptime, u64 timestamp);
 
 #endif
