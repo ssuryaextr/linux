@@ -39,7 +39,23 @@
 <h2>
 <a name="time-of-day-correlation-for-events" class="anchor" href="#time-of-day-correlation-for-events"><span class="octicon octicon-link"></span></a>Time-of-day correlation for events</h2>
 
-<p>Correlating perf_events to time-of-day is an essential feature for me. To make use of the time-of-day changes you need to build a module for your kernel version and load it. The module exports perf_clock timestamps to userspace via clock_gettime.</p>
+<p>That random number that is perf_clock does not correlate to any exported
+clock source and hence timestamps used by any applications. Correlating
+perf_events to app logs are important -- an essential feature for me.</p>
+
+<p>The method used here is to export perf_clock to userspace as a posix clock
+(Thank you Pawel Moll):</p>
+
+<p>#define CLOCK_PERF         14</p>
+
+<pre><code>if (clock_gettime(CLOCK_PERF, &amp;ts) != 0) {
+}
+</code></pre>
+
+<p>To make use of the time-of-day changes you need to build a module for your
+kernel version and load it (code is at the end of this file). It should work for
+kernels 2.6.38 and on (as long as posix_timers_register_clock and local_clock
+are exported).</p>
 
 <p>When recording events add the time-of-day option (--tod): 
 <code>perf record --tod ...</code></p>
@@ -51,9 +67,9 @@
 <p>Exporting perf_clock to userspace also allows 'perf kvm stat live' and the scheduling daemon to work better -- no flush timestamp errors.</p>
 
 <h2>
-<a name="new-sub-commands-in-perf-sched-for-task-scheduling-analysis" class="anchor" href="#new-sub-commands-in-perf-sched-for-task-scheduling-analysis"><span class="octicon octicon-link"></span></a>New sub-commands in perf sched for task scheduling analysis</h2>
+<a name="task-scheduling-analysis" class="anchor" href="#task-scheduling-analysis"><span class="octicon octicon-link"></span></a>Task scheduling analysis</h2>
 
-<p>Scheduling analysis shows how long a process goes between schedule in events, how it runs once scheduled and the scheduling delay (time between wakeup and schedule in; non-realtime processes only). If callchains are requested a stack dump snippet is displayed showing where the task is when scheduled out. Useful for seeing when a task is preempted versus blocking by design.</p>
+<p>Two commands have been added to analyze task scheduling - show how long a process goes between schedule in events, how long it runs once scheduled and the scheduling delay (time between wakeup and schedule in; non-realtime processes only). If callchains are requested a stack dump snippet is displayed showing where the task is when scheduled out. Useful for seeing when a task is preempted versus blocking by design.</p>
 
 <p>Record data to a file and then analyze:</p>
 
@@ -91,15 +107,17 @@ See man page for output options (process tree, summary only, specific tasks, tim
 <h2>
 <a name="refining-analysis" class="anchor" href="#refining-analysis"><span class="octicon octicon-link"></span></a>Refining analysis</h2>
 
-<p>a. time window - only analyze events within given start,stop times
-   b. pid and tid - only analyze events for given pid's and/or tid's
-   c. callchain - only show kernel or user stacks (script/timehist)</p>
-
-<h2>
+<ul>
+<li>time window - only analyze events within given start,stop times</li>
+<li>pid and tid - only analyze events for given pid's and/or tid's</li>
+<li>callchain - only show kernel or user stacks (script/timehist)</li>
+</ul><h2>
 <a name="miscellaneous" class="anchor" href="#miscellaneous"><span class="octicon octicon-link"></span></a>Miscellaneous</h2>
 
-<p>a. DSO lookups with symfs option: checks for all dso's in a single directory 
-   b. build perf without builtin tests: make NO_PERF_TESTS=1 ...</p>
+<ul>
+<li>DSO lookups with symfs option: checks for all dso's in a single directory </li>
+<li>build perf without builtin tests: make NO_PERF_TESTS=1 ...</li>
+</ul>
       </section>
     </div>
 
