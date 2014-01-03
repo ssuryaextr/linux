@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset='utf-8' />
+    <meta http-equiv="X-UA-Compatible" content="chrome=1" />
+    <meta name="description" content="Linux : David's perf patches." />
+
+    <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
+
+    <title>Linux</title>
+  </head>
+
+  <body>
+
+    <!-- HEADER -->
+    <div id="header_wrap" class="outer">
+        <header class="inner">
+          <a id="forkme_banner" href="https://github.com/dsahern/linux">View on GitHub</a>
+
+          <h1 id="project_title">Linux</h1>
+          <h2 id="project_tagline">David's perf patches.</h2>
+
+            <section id="downloads">
+              <a class="zip_download_link" href="https://github.com/dsahern/linux/zipball/master">Download this project as a .zip file</a>
+              <a class="tar_download_link" href="https://github.com/dsahern/linux/tarball/master">Download this project as a tar.gz file</a>
+            </section>
+        </header>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="main_content_wrap" class="outer">
+      <section id="main_content" class="inner">
+        <h1>
+<a name="patch-summary" class="anchor" href="#patch-summary"><span class="octicon octicon-link"></span></a>Patch Summary</h1>
+
+<p>The perf-full-monty branch contains a number of features not yet pushed upstream.</p>
+
+<h2>
+<a name="time-of-day-correlation-for-events" class="anchor" href="#time-of-day-correlation-for-events"><span class="octicon octicon-link"></span></a>Time-of-day correlation for events</h2>
+
+<p>Correlating perf_events to time-of-day is an essential feature for me. To make use of the time-of-day changes you need to build a module for your kernel version and load it. The module exports perf_clock timestamps to userspace via clock_gettime.</p>
+
+<p>When recording events add the time-of-day option (--tod): 
+<code>perf record --tod ...</code></p>
+
+<p>This option adds a reference time to the header to correlate perf_clock to time-of-day. It is not perfect and does not handle NTP updates or a user changing the dates (I have patches for that, just not in this set yet). Long running perf-record sessions may see small drifts as the correlation is taken at startup.</p>
+
+<p>If the data file contains the reftime analysis commands will see it and output times as time-of-day rather than perf-clock timestamps.</p>
+
+<p>Exporting perf_clock to userspace also allows 'perf kvm stat live' and the scheduling daemon to work better -- no flush timestamp errors.</p>
+
+<h2>
+<a name="new-sub-commands-in-perf-sched-for-task-scheduling-analysis" class="anchor" href="#new-sub-commands-in-perf-sched-for-task-scheduling-analysis"><span class="octicon octicon-link"></span></a>New sub-commands in perf sched for task scheduling analysis</h2>
+
+<p>Scheduling analysis shows how long a process goes between schedule in events, how it runs once scheduled and the scheduling delay (time between wakeup and schedule in; non-realtime processes only). If callchains are requested a stack dump snippet is displayed showing where the task is when scheduled out. Useful for seeing when a task is preempted versus blocking by design.</p>
+
+<p>Record data to a file and then analyze:</p>
+
+<ul>
+<li>perf sched record -g -S [--tod] ...</li>
+<li>perf sched timehist
+See man page for output options (process tree, summary only, specific tasks, time windows of interest).</li>
+</ul><p>Add -e kvm:kvm_entry,kvm:kvm_exit to the record command to also dump entry/exit analysis of VMs along with the scheduling output.</p>
+
+<p>There is also a daemon option which keep N-seconds of data in memory (flight recorder mode). Scheduling analysis can be dumped to a file on demand. This is useful (for example) to debug sporadic problems where you do not want to run a record session for hours to days. When a problem occurs and you want to see CPU scheduling history tell the daemon to dump the events to a file:</p>
+
+<ul>
+<li>perf sched daemon -g -o /tmp/schedmon</li>
+<li>kill -HUP </li>
+</ul><p>The -C option compresses the output file when writing it. Add the -K option to add KVM events and corresponding analysis.</p>
+
+<h2>
+<a name="enhancements-to-perf-trace" class="anchor" href="#enhancements-to-perf-trace"><span class="octicon octicon-link"></span></a>Enhancements to perf trace</h2>
+
+<p>perf-record is changed to create the data file using mmap rather than write. This is required for tracing all processes (perf trace record -a) which otherwise has an ugly feedback loop.</p>
+
+<p>Show timestamps as time-of-day: <code>perf trace -TT</code></p>
+
+<p>RHEL6 compatibility: perf trace now works properly on RHEL6.</p>
+
+<p>Autodetect bitness of process (32-bit/64-bit). Syscall nr to name conversions are dependent on bitness of the task -- 32-bit processes on a 64-bit kernel have a different table than 64-bit processes. This branch contains patches to autodetect the task bitness and do the proper conversion. When analyzing a data file offbox the symfs is required to work properly.</p>
+
+<h2>
+<a name="perf-probe" class="anchor" href="#perf-probe"><span class="octicon octicon-link"></span></a>perf probe</h2>
+
+<p>Improved error message when function now found. probe code filters non-global symbols.</p>
+
+<p>Specify relative address within executable: This allows probing functions in system libraries that otherwise cannot be probed due to code design limitations. e.g., any versioned symbol (name contains @) and local functions.</p>
+
+<h2>
+<a name="refining-analysis" class="anchor" href="#refining-analysis"><span class="octicon octicon-link"></span></a>Refining analysis</h2>
+
+<p>a. time window - only analyze events within given start,stop times
+   b. pid and tid - only analyze events for given pid's and/or tid's
+   c. callchain - only show kernel or user stacks (script/timehist)</p>
+
+<h2>
+<a name="miscellaneous" class="anchor" href="#miscellaneous"><span class="octicon octicon-link"></span></a>Miscellaneous</h2>
+
+<p>a. DSO lookups with symfs option: checks for all dso's in a single directory 
+   b. build perf without builtin tests: make NO_PERF_TESTS=1 ...</p>
+      </section>
+    </div>
+
+    <!-- FOOTER  -->
+    <div id="footer_wrap" class="outer">
+      <footer class="inner">
+        <p class="copyright">Linux maintained by <a href="https://github.com/dsahern">dsahern</a></p>
+        <p>Published with <a href="http://pages.github.com">GitHub Pages</a></p>
+      </footer>
+    </div>
+
+    
+
+  </body>
+</html>
