@@ -225,6 +225,7 @@ static int arp_constructor(struct neighbour *neigh)
 	struct net_device *dev = neigh->dev;
 	struct in_device *in_dev;
 	struct neigh_parms *parms;
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 
 	rcu_read_lock();
 	in_dev = __in_dev_get_rcu(dev);
@@ -233,7 +234,7 @@ static int arp_constructor(struct neighbour *neigh)
 		return -EINVAL;
 	}
 
-	neigh->type = inet_addr_type(dev_net(dev), addr);
+	neigh->type = inet_addr_type(&dev_ctx, addr);
 
 	parms = in_dev->arp_parms;
 	__neigh_parms_put(neigh->parms);
@@ -328,6 +329,7 @@ static void arp_solicit(struct neighbour *neigh, struct sk_buff *skb)
 	__be32 target = *(__be32 *)neigh->primary_key;
 	int probes = atomic_read(&neigh->probes);
 	struct in_device *in_dev;
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 
 	rcu_read_lock();
 	in_dev = __in_dev_get_rcu(dev);
@@ -338,7 +340,7 @@ static void arp_solicit(struct neighbour *neigh, struct sk_buff *skb)
 	switch (IN_DEV_ARP_ANNOUNCE(in_dev)) {
 	default:
 	case 0:		/* By default announce any local IP */
-		if (skb && inet_addr_type(dev_net(dev),
+		if (skb && inet_addr_type(&dev_ctx,
 					  ip_hdr(skb)->saddr) == RTN_LOCAL)
 			saddr = ip_hdr(skb)->saddr;
 		break;
@@ -346,7 +348,7 @@ static void arp_solicit(struct neighbour *neigh, struct sk_buff *skb)
 		if (!skb)
 			break;
 		saddr = ip_hdr(skb)->saddr;
-		if (inet_addr_type(dev_net(dev), saddr) == RTN_LOCAL) {
+		if (inet_addr_type(&dev_ctx, saddr) == RTN_LOCAL) {
 			/* saddr should be known to target */
 			if (inet_addr_onlink(in_dev, target, saddr))
 				break;
@@ -381,7 +383,7 @@ static void arp_solicit(struct neighbour *neigh, struct sk_buff *skb)
 
 static int arp_ignore(struct in_device *in_dev, __be32 sip, __be32 tip)
 {
-	struct net *net = dev_net(in_dev->dev);
+	struct net_ctx dev_ctx = DEV_NET_CTX(in_dev->dev);
 	int scope;
 
 	switch (IN_DEV_ARP_IGNORE(in_dev)) {
@@ -412,7 +414,7 @@ static int arp_ignore(struct in_device *in_dev, __be32 sip, __be32 tip)
 	default:
 		return 0;
 	}
-	return !inet_confirm_addr(net, in_dev, sip, tip, scope);
+	return !inet_confirm_addr(&dev_ctx, in_dev, sip, tip, scope);
 }
 
 static int arp_filter(__be32 sip, __be32 tip, struct net_device *dev)
@@ -420,9 +422,10 @@ static int arp_filter(__be32 sip, __be32 tip, struct net_device *dev)
 	struct rtable *rt;
 	int flag = 0;
 	/*unsigned long now; */
-	struct net *net = dev_net(dev);
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
+	struct net *net = dev_ctx.net;
 
-	rt = ip_route_output(net, sip, tip, 0, 0);
+	rt = ip_route_output(&dev_ctx, sip, tip, 0, 0);
 	if (IS_ERR(rt))
 		return 1;
 	if (rt->dst.dev != dev) {
@@ -468,6 +471,7 @@ int arp_find(unsigned char *haddr, struct sk_buff *skb)
 	struct net_device *dev = skb->dev;
 	__be32 paddr;
 	struct neighbour *n;
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 
 	if (!skb_dst(skb)) {
 		pr_debug("arp_find is called with dst==NULL\n");
@@ -476,7 +480,7 @@ int arp_find(unsigned char *haddr, struct sk_buff *skb)
 	}
 
 	paddr = rt_nexthop(skb_rtable(skb), ip_hdr(skb)->daddr);
-	if (arp_set_predefined(inet_addr_type(dev_net(dev), paddr), haddr,
+	if (arp_set_predefined(inet_addr_type(&dev_ctx, paddr), haddr,
 			       paddr, dev))
 		return 0;
 
@@ -731,7 +735,7 @@ static int arp_process(struct sk_buff *skb)
 	u16 dev_type = dev->type;
 	int addr_type;
 	struct neighbour *n;
-	struct net *net = dev_net(dev);
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 	bool is_garp = false;
 
 	/* arp_rcv below verifies the ARP header and verifies the device
@@ -835,7 +839,7 @@ static int arp_process(struct sk_buff *skb)
 	/* Special case: IPv4 duplicate address detection packet (RFC2131) */
 	if (sip == 0) {
 		if (arp->ar_op == htons(ARPOP_REQUEST) &&
-		    inet_addr_type(net, tip) == RTN_LOCAL &&
+		    inet_addr_type(&dev_ctx, tip) == RTN_LOCAL &&
 		    !arp_ignore(in_dev, sip, tip))
 			arp_send(ARPOP_REPLY, ETH_P_ARP, sip, dev, tip, sha,
 				 dev->dev_addr, sha);
@@ -869,7 +873,7 @@ static int arp_process(struct sk_buff *skb)
 			    (arp_fwd_proxy(in_dev, dev, rt) ||
 			     arp_fwd_pvlan(in_dev, dev, rt, sip, tip) ||
 			     (rt->dst.dev != dev &&
-			      pneigh_lookup(&arp_tbl, net, &tip, dev, 0)))) {
+			      pneigh_lookup(&arp_tbl, &dev_ctx, &tip, dev, 0)))) {
 				n = neigh_event_ns(&arp_tbl, sha, &sip, dev);
 				if (n)
 					neigh_release(n);
@@ -900,11 +904,11 @@ static int arp_process(struct sk_buff *skb)
 		   devices (strip is candidate)
 		 */
 		is_garp = arp->ar_op == htons(ARPOP_REQUEST) && tip == sip &&
-			  inet_addr_type(net, sip) == RTN_UNICAST;
+			  inet_addr_type(&dev_ctx, sip) == RTN_UNICAST;
 
 		if (n == NULL &&
 		    ((arp->ar_op == htons(ARPOP_REPLY)  &&
-		      inet_addr_type(net, sip) == RTN_UNICAST) || is_garp))
+		      inet_addr_type(&dev_ctx, sip) == RTN_UNICAST) || is_garp))
 			n = __neigh_lookup(&arp_tbl, &sip, dev, 1);
 	}
 
@@ -1005,9 +1009,10 @@ static int arp_req_set_proxy(struct net *net, struct net_device *dev, int on)
 	return -ENXIO;
 }
 
-static int arp_req_set_public(struct net *net, struct arpreq *r,
+static int arp_req_set_public(struct net_ctx *ctx, struct arpreq *r,
 		struct net_device *dev)
 {
+	struct net *net = ctx->net;
 	__be32 ip = ((struct sockaddr_in *)&r->arp_pa)->sin_addr.s_addr;
 	__be32 mask = ((struct sockaddr_in *)&r->arp_netmask)->sin_addr.s_addr;
 
@@ -1020,15 +1025,15 @@ static int arp_req_set_public(struct net *net, struct arpreq *r,
 			return -ENODEV;
 	}
 	if (mask) {
-		if (pneigh_lookup(&arp_tbl, net, &ip, dev, 1) == NULL)
+		if (pneigh_lookup(&arp_tbl, ctx, &ip, dev, 1) == NULL)
 			return -ENOBUFS;
 		return 0;
 	}
 
-	return arp_req_set_proxy(net, dev, 1);
+	return arp_req_set_proxy(ctx->net, dev, 1);
 }
 
-static int arp_req_set(struct net *net, struct arpreq *r,
+static int arp_req_set(struct net_ctx *ctx, struct arpreq *r,
 		       struct net_device *dev)
 {
 	__be32 ip;
@@ -1036,13 +1041,13 @@ static int arp_req_set(struct net *net, struct arpreq *r,
 	int err;
 
 	if (r->arp_flags & ATF_PUBL)
-		return arp_req_set_public(net, r, dev);
+		return arp_req_set_public(ctx, r, dev);
 
 	ip = ((struct sockaddr_in *)&r->arp_pa)->sin_addr.s_addr;
 	if (r->arp_flags & ATF_PERM)
 		r->arp_flags |= ATF_COM;
 	if (dev == NULL) {
-		struct rtable *rt = ip_route_output(net, ip, 0, RTO_ONLINK, 0);
+		struct rtable *rt = ip_route_output(ctx, ip, 0, RTO_ONLINK, 0);
 
 		if (IS_ERR(rt))
 			return PTR_ERR(rt);
@@ -1137,32 +1142,31 @@ static int arp_invalidate(struct net_device *dev, __be32 ip)
 	return err;
 }
 
-static int arp_req_delete_public(struct net *net, struct arpreq *r,
+static int arp_req_delete_public(struct net_ctx *ctx, struct arpreq *r,
 		struct net_device *dev)
 {
 	__be32 ip = ((struct sockaddr_in *) &r->arp_pa)->sin_addr.s_addr;
 	__be32 mask = ((struct sockaddr_in *)&r->arp_netmask)->sin_addr.s_addr;
 
 	if (mask == htonl(0xFFFFFFFF))
-		return pneigh_delete(&arp_tbl, net, &ip, dev);
+		return pneigh_delete(&arp_tbl, ctx, &ip, dev);
 
 	if (mask)
 		return -EINVAL;
 
-	return arp_req_set_proxy(net, dev, 0);
+	return arp_req_set_proxy(ctx->net, dev, 0);
 }
 
-static int arp_req_delete(struct net *net, struct arpreq *r,
+static int arp_req_delete(struct net_ctx *ctx, struct arpreq *r,
 			  struct net_device *dev)
 {
 	__be32 ip;
 
 	if (r->arp_flags & ATF_PUBL)
-		return arp_req_delete_public(net, r, dev);
-
+		return arp_req_delete_public(ctx, r, dev);
 	ip = ((struct sockaddr_in *)&r->arp_pa)->sin_addr.s_addr;
 	if (dev == NULL) {
-		struct rtable *rt = ip_route_output(net, ip, 0, RTO_ONLINK, 0);
+		struct rtable *rt = ip_route_output(ctx, ip, 0, RTO_ONLINK, 0);
 		if (IS_ERR(rt))
 			return PTR_ERR(rt);
 		dev = rt->dst.dev;
@@ -1177,8 +1181,9 @@ static int arp_req_delete(struct net *net, struct arpreq *r,
  *	Handle an ARP layer I/O control request.
  */
 
-int arp_ioctl(struct net *net, unsigned int cmd, void __user *arg)
+int arp_ioctl(struct net_ctx *ctx, unsigned int cmd, void __user *arg)
 {
+	struct net *net = ctx->net;
 	int err;
 	struct arpreq r;
 	struct net_device *dev = NULL;
@@ -1226,10 +1231,10 @@ int arp_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 
 	switch (cmd) {
 	case SIOCDARP:
-		err = arp_req_delete(net, &r, dev);
+		err = arp_req_delete(ctx, &r, dev);
 		break;
 	case SIOCSARP:
-		err = arp_req_set(net, &r, dev);
+		err = arp_req_set(ctx, &r, dev);
 		break;
 	case SIOCGARP:
 		err = arp_req_get(&r, dev);
@@ -1247,11 +1252,12 @@ static int arp_netdev_event(struct notifier_block *this, unsigned long event,
 {
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct netdev_notifier_change_info *change_info;
+	struct net *net = dev_net(dev);
 
 	switch (event) {
 	case NETDEV_CHANGEADDR:
 		neigh_changeaddr(&arp_tbl, dev);
-		rt_cache_flush(dev_net(dev));
+		rt_cache_flush(net);
 		break;
 	case NETDEV_CHANGE:
 		change_info = ptr;

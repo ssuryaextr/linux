@@ -99,6 +99,7 @@ void ip4_datagram_release_cb(struct sock *sk)
 	struct dst_entry *dst;
 	struct flowi4 fl4;
 	struct rtable *rt;
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	rcu_read_lock();
 
@@ -110,7 +111,7 @@ void ip4_datagram_release_cb(struct sock *sk)
 	inet_opt = rcu_dereference(inet->inet_opt);
 	if (inet_opt && inet_opt->opt.srr)
 		daddr = inet_opt->opt.faddr;
-	rt = ip_route_output_ports(sock_net(sk), &fl4, sk, daddr,
+	rt = ip_route_output_ports(&sk_ctx, &fl4, sk, daddr,
 				   inet->inet_saddr, inet->inet_dport,
 				   inet->inet_sport, sk->sk_protocol,
 				   RT_CONN_FLAGS(sk), sk->sk_bound_dev_if);

@@ -246,16 +246,16 @@ int udp_lib_getsockopt(struct sock *sk, int level, int optname,
 int udp_lib_setsockopt(struct sock *sk, int level, int optname,
 		       char __user *optval, unsigned int optlen,
 		       int (*push_pending_frames)(struct sock *));
-struct sock *udp4_lib_lookup(struct net *net, __be32 saddr, __be16 sport,
+struct sock *udp4_lib_lookup(struct net_ctx *ctx, __be32 saddr, __be16 sport,
 			     __be32 daddr, __be16 dport, int dif);
-struct sock *__udp4_lib_lookup(struct net *net, __be32 saddr, __be16 sport,
+struct sock *__udp4_lib_lookup(struct net_ctx *ctx, __be32 saddr, __be16 sport,
 			       __be32 daddr, __be16 dport, int dif,
 			       struct udp_table *tbl);
-struct sock *udp6_lib_lookup(struct net *net,
+struct sock *udp6_lib_lookup(struct net_ctx *ctx,
 			     const struct in6_addr *saddr, __be16 sport,
 			     const struct in6_addr *daddr, __be16 dport,
 			     int dif);
-struct sock *__udp6_lib_lookup(struct net *net,
+struct sock *__udp6_lib_lookup(struct net_ctx *ctx,
 			       const struct in6_addr *saddr, __be16 sport,
 			       const struct in6_addr *daddr, __be16 dport,
 			       int dif, struct udp_table *tbl);

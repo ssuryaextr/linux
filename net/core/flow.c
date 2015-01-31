@@ -189,9 +189,10 @@ static int flow_key_compare(const struct flowi *key1, const struct flowi *key2,
 }
 
 struct flow_cache_object *
-flow_cache_lookup(struct net *net, const struct flowi *key, u16 family, u8 dir,
+flow_cache_lookup(struct net_ctx *net_ctx, const struct flowi *key, u16 family, u8 dir,
 		  flow_resolve_t resolver, void *ctx)
 {
+	struct net *net = net_ctx->net;
 	struct flow_cache *fc = &net->xfrm.flow_cache_global;
 	struct flow_cache_percpu *fcp;
 	struct flow_cache_entry *fle, *tfle;
@@ -261,7 +262,7 @@ nocache:
 		flo = fle->object;
 		fle->object = NULL;
 	}
-	flo = resolver(net, key, family, dir, flo, ctx);
+	flo = resolver(net_ctx, key, family, dir, flo, ctx);
 	if (fle) {
 		fle->genid = atomic_read(&net->xfrm.flow_cache_genid);
 		if (!IS_ERR(flo))

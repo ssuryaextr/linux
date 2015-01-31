@@ -181,7 +181,7 @@ static inline __u8 ip_reply_arg_flowi_flags(const struct ip_reply_arg *arg)
 	return (arg->flags & IP_REPLY_ARG_NOSRCCHECK) ? FLOWI_FLAG_ANYSRC : 0;
 }
 
-void ip_send_unicast_reply(struct net *net, struct sk_buff *skb,
+void ip_send_unicast_reply(struct net_ctx *ctx, struct sk_buff *skb,
 			   const struct ip_options *sopt,
 			   __be32 daddr, __be32 saddr,
 			   const struct ip_reply_arg *arg,
@@ -523,11 +523,11 @@ static inline int ip_options_echo(struct ip_options *dopt, struct sk_buff *skb)
 }
 
 void ip_options_fragment(struct sk_buff *skb);
-int ip_options_compile(struct net *net, struct ip_options *opt,
+int ip_options_compile(struct net_ctx *ctx, struct ip_options *opt,
 		       struct sk_buff *skb);
-int ip_options_get(struct net *net, struct ip_options_rcu **optp,
+int ip_options_get(struct net_ctx *ctx, struct ip_options_rcu **optp,
 		   unsigned char *data, int optlen);
-int ip_options_get_from_user(struct net *net, struct ip_options_rcu **optp,
+int ip_options_get_from_user(struct net_ctx *ctx, struct ip_options_rcu **optp,
 			     unsigned char __user *data, int optlen);
 void ip_options_undo(struct ip_options *opt);
 void ip_forward_options(struct sk_buff *skb);
@@ -539,7 +539,7 @@ int ip_options_rcv_srr(struct sk_buff *skb);
 
 void ipv4_pktinfo_prepare(const struct sock *sk, struct sk_buff *skb);
 void ip_cmsg_recv_offset(struct msghdr *msg, struct sk_buff *skb, int offset);
-int ip_cmsg_send(struct net *net, struct msghdr *msg,
+int ip_cmsg_send(struct net_ctx *ctx, struct msghdr *msg,
 		 struct ipcm_cookie *ipc, bool allow_ipv6);
 int ip_setsockopt(struct sock *sk, int level, int optname, char __user *optval,
 		  unsigned int optlen);

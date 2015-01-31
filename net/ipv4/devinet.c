@@ -136,8 +136,9 @@ static void inet_hash_remove(struct in_ifaddr *ifa)
  *
  * If a caller uses devref=false, it should be protected by RCU, or RTNL
  */
-struct net_device *__ip_dev_find(struct net *net, __be32 addr, bool devref)
+struct net_device *__ip_dev_find(struct net_ctx *ctx, __be32 addr, bool devref)
 {
+	struct net *net = ctx->net;
 	u32 hash = inet_addr_hash(net, addr);
 	struct net_device *result = NULL;
 	struct in_ifaddr *ifa;
@@ -147,7 +148,7 @@ struct net_device *__ip_dev_find(struct net *net, __be32 addr, bool devref)
 		if (ifa->ifa_local == addr) {
 			struct net_device *dev = ifa->ifa_dev->dev;
 
-			if (!net_eq(dev_net(dev), net))
+			if (!dev_net_ctx_eq(dev, ctx))
 				continue;
 			result = dev;
 			break;
@@ -520,13 +521,13 @@ static int inet_set_ifa(struct net_device *dev, struct in_ifaddr *ifa)
 /* Caller must hold RCU or RTNL :
  * We dont take a reference on found in_device
  */
-struct in_device *inetdev_by_index(struct net *net, int ifindex)
+struct in_device *inetdev_by_index(struct net_ctx *ctx, int ifindex)
 {
 	struct net_device *dev;
 	struct in_device *in_dev = NULL;
 
 	rcu_read_lock();
-	dev = dev_get_by_index_rcu(net, ifindex);
+	dev = dev_get_by_index_rcu_ctx(ctx, ifindex);
 	if (dev)
 		in_dev = rcu_dereference_rtnl(dev->ip_ptr);
 	rcu_read_unlock();
@@ -550,7 +551,7 @@ struct in_ifaddr *inet_ifa_byprefix(struct in_device *in_dev, __be32 prefix,
 
 static int inet_rtm_deladdr(struct sk_buff *skb, struct nlmsghdr *nlh)
 {
-	struct net *net = sock_net(skb->sk);
+	struct net_ctx ctx = SKB_NET_CTX_SOCK(skb);
 	struct nlattr *tb[IFA_MAX+1];
 	struct in_device *in_dev;
 	struct ifaddrmsg *ifm;
@@ -564,7 +565,7 @@ static int inet_rtm_deladdr(struct sk_buff *skb, struct nlmsghdr *nlh)
 		goto errout;
 
 	ifm = nlmsg_data(nlh);
-	in_dev = inetdev_by_index(net, ifm->ifa_index);
+	in_dev = inetdev_by_index(&ctx, ifm->ifa_index);
 	if (in_dev == NULL) {
 		err = -ENODEV;
 		goto errout;
@@ -717,7 +718,7 @@ static void set_ifa_lifetime(struct in_ifaddr *ifa, __u32 valid_lft,
 		ifa->ifa_cstamp = ifa->ifa_tstamp;
 }
 
-static struct in_ifaddr *rtm_to_ifaddr(struct net *net, struct nlmsghdr *nlh,
+static struct in_ifaddr *rtm_to_ifaddr(struct net_ctx *ctx, struct nlmsghdr *nlh,
 				       __u32 *pvalid_lft, __u32 *pprefered_lft)
 {
 	struct nlattr *tb[IFA_MAX+1];
@@ -736,7 +737,7 @@ static struct in_ifaddr *rtm_to_ifaddr(struct net *net, struct nlmsghdr *nlh,
 	if (ifm->ifa_prefixlen > 32 || tb[IFA_LOCAL] == NULL)
 		goto errout;
 
-	dev = __dev_get_by_index(net, ifm->ifa_index);
+	dev = __dev_get_by_index_ctx(ctx, ifm->ifa_index);
 	err = -ENODEV;
 	if (dev == NULL)
 		goto errout;
@@ -820,7 +821,7 @@ static struct in_ifaddr *find_matching_ifa(struct in_ifaddr *ifa)
 
 static int inet_rtm_newaddr(struct sk_buff *skb, struct nlmsghdr *nlh)
 {
-	struct net *net = sock_net(skb->sk);
+	struct net_ctx ctx = SKB_NET_CTX_SOCK(skb);
 	struct in_ifaddr *ifa;
 	struct in_ifaddr *ifa_existing;
 	__u32 valid_lft = INFINITY_LIFE_TIME;
@@ -828,7 +829,7 @@ static int inet_rtm_newaddr(struct sk_buff *skb, struct nlmsghdr *nlh)
 
 	ASSERT_RTNL();
 
-	ifa = rtm_to_ifaddr(net, nlh, &valid_lft, &prefered_lft);
+	ifa = rtm_to_ifaddr(&ctx, nlh, &valid_lft, &prefered_lft);
 	if (IS_ERR(ifa))
 		return PTR_ERR(ifa);
 
@@ -881,8 +882,9 @@ static int inet_abc_len(__be32 addr)
 }
 
 
-int devinet_ioctl(struct net *net, unsigned int cmd, void __user *arg)
+int devinet_ioctl(struct net_ctx *net_ctx, unsigned int cmd, void __user *arg)
 {
+	struct net *net = net_ctx->net;
 	struct ifreq ifr;
 	struct sockaddr_in sin_orig;
 	struct sockaddr_in *sin = (struct sockaddr_in *)&ifr.ifr_addr;
@@ -1253,7 +1255,7 @@ static __be32 confirm_addr_indev(struct in_device *in_dev, __be32 dst,
  * - local: address, 0=autoselect the local address
  * - scope: maximum allowed scope value for the local address
  */
-__be32 inet_confirm_addr(struct net *net, struct in_device *in_dev,
+__be32 inet_confirm_addr(struct net_ctx *ctx, struct in_device *in_dev,
 			 __be32 dst, __be32 local, int scope)
 {
 	__be32 addr = 0;
@@ -1263,7 +1265,7 @@ __be32 inet_confirm_addr(struct net *net, struct in_device *in_dev,
 		return confirm_addr_indev(in_dev, dst, local, scope);
 
 	rcu_read_lock();
-	for_each_netdev_rcu(net, dev) {
+	for_each_netdev_rcu(ctx->net, dev) {
 		in_dev = __in_dev_get_rcu(dev);
 		if (in_dev) {
 			addr = confirm_addr_indev(in_dev, dst, local, scope);
@@ -1532,7 +1534,8 @@ nla_put_failure:
 
 static int inet_dump_ifaddr(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	struct net *net = sock_net(skb->sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(skb->sk);
+	struct net *net = sk_ctx.net;
 	int h, s_h;
 	int idx, s_idx;
 	int ip_idx, s_ip_idx;
@@ -1854,7 +1857,8 @@ errout:
 static int inet_netconf_dump_devconf(struct sk_buff *skb,
 				     struct netlink_callback *cb)
 {
-	struct net *net = sock_net(skb->sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(skb->sk);
+	struct net *net = sk_ctx.net;
 	int h, s_h;
 	int idx, s_idx;
 	struct net_device *dev;

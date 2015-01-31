@@ -286,15 +286,15 @@ struct xfrm_policy_afinfo {
 	unsigned short		family;
 	struct dst_ops		*dst_ops;
 	void			(*garbage_collect)(struct net *net);
-	struct dst_entry	*(*dst_lookup)(struct net *net, int tos,
+	struct dst_entry	*(*dst_lookup)(struct net_ctx *ctx, int tos,
 					       const xfrm_address_t *saddr,
 					       const xfrm_address_t *daddr);
-	int			(*get_saddr)(struct net *net, xfrm_address_t *saddr, xfrm_address_t *daddr);
+	int			(*get_saddr)(struct net_ctx *ctx, xfrm_address_t *saddr, xfrm_address_t *daddr);
 	void			(*decode_session)(struct sk_buff *skb,
 						  struct flowi *fl,
 						  int reverse);
 	int			(*get_tos)(const struct flowi *fl);
-	void			(*init_dst)(struct net *net,
+	void			(*init_dst)(struct net_ctx *ctx,
 					    struct xfrm_dst *dst);
 	int			(*init_path)(struct xfrm_dst *path,
 					     struct dst_entry *dst,
@@ -302,7 +302,7 @@ struct xfrm_policy_afinfo {
 	int			(*fill_dst)(struct xfrm_dst *xdst,
 					    struct net_device *dev,
 					    const struct flowi *fl);
-	struct dst_entry	*(*blackhole_route)(struct net *net, struct dst_entry *orig);
+	struct dst_entry	*(*blackhole_route)(struct net_ctx *ctx, struct dst_entry *orig);
 };
 
 int xfrm_policy_register_afinfo(struct xfrm_policy_afinfo *afinfo);
@@ -597,7 +597,7 @@ struct xfrm_mgr {
 	struct xfrm_policy	*(*compile_policy)(struct sock *sk, int opt, u8 *data, int len, int *dir);
 	int			(*new_mapping)(struct xfrm_state *x, xfrm_address_t *ipaddr, __be16 sport);
 	int			(*notify_policy)(struct xfrm_policy *x, int dir, const struct km_event *c);
-	int			(*report)(struct net *net, u8 proto, struct xfrm_selector *sel, xfrm_address_t *addr);
+	int			(*report)(struct net_ctx *ctx, u8 proto, struct xfrm_selector *sel, xfrm_address_t *addr);
 	int			(*migrate)(const struct xfrm_selector *sel,
 					   u8 dir, u8 type,
 					   const struct xfrm_migrate *m,
@@ -1428,43 +1428,43 @@ static inline void xfrm_sysctl_fini(struct net *net)
 
 void xfrm_state_walk_init(struct xfrm_state_walk *walk, u8 proto,
 			  struct xfrm_address_filter *filter);
-int xfrm_state_walk(struct net *net, struct xfrm_state_walk *walk,
+int xfrm_state_walk(struct net_ctx *ctx, struct xfrm_state_walk *walk,
 		    int (*func)(struct xfrm_state *, int, void*), void *);
-void xfrm_state_walk_done(struct xfrm_state_walk *walk, struct net *net);
-struct xfrm_state *xfrm_state_alloc(struct net *net);
+void xfrm_state_walk_done(struct xfrm_state_walk *walk, struct net_ctx *ctx);
+struct xfrm_state *xfrm_state_alloc(struct net_ctx *ctx);
 struct xfrm_state *xfrm_state_find(const xfrm_address_t *daddr,
 				   const xfrm_address_t *saddr,
 				   const struct flowi *fl,
 				   struct xfrm_tmpl *tmpl,
 				   struct xfrm_policy *pol, int *err,
 				   unsigned short family);
-struct xfrm_state *xfrm_stateonly_find(struct net *net, u32 mark,
+struct xfrm_state *xfrm_stateonly_find(struct net_ctx *ctx, u32 mark,
 				       xfrm_address_t *daddr,
 				       xfrm_address_t *saddr,
 				       unsigned short family,
 				       u8 mode, u8 proto, u32 reqid);
-struct xfrm_state *xfrm_state_lookup_byspi(struct net *net, __be32 spi,
+struct xfrm_state *xfrm_state_lookup_byspi(struct net_ctx *ctx, __be32 spi,
 					      unsigned short family);
 int xfrm_state_check_expire(struct xfrm_state *x);
 void xfrm_state_insert(struct xfrm_state *x);
 int xfrm_state_add(struct xfrm_state *x);
 int xfrm_state_update(struct xfrm_state *x);
-struct xfrm_state *xfrm_state_lookup(struct net *net, u32 mark,
+struct xfrm_state *xfrm_state_lookup(struct net_ctx *ctx, u32 mark,
 				     const xfrm_address_t *daddr, __be32 spi,
 				     u8 proto, unsigned short family);
-struct xfrm_state *xfrm_state_lookup_byaddr(struct net *net, u32 mark,
+struct xfrm_state *xfrm_state_lookup_byaddr(struct net_ctx *ctx, u32 mark,
 					    const xfrm_address_t *daddr,
 					    const xfrm_address_t *saddr,
 					    u8 proto,
 					    unsigned short family);
 #ifdef CONFIG_XFRM_SUB_POLICY
 int xfrm_tmpl_sort(struct xfrm_tmpl **dst, struct xfrm_tmpl **src, int n,
-		   unsigned short family, struct net *net);
+		   unsigned short family, struct net_ctx *ctx);
 int xfrm_state_sort(struct xfrm_state **dst, struct xfrm_state **src, int n,
 		    unsigned short family);
 #else
 static inline int xfrm_tmpl_sort(struct xfrm_tmpl **dst, struct xfrm_tmpl **src,
-				 int n, unsigned short family, struct net *net)
+				 int n, unsigned short family, struct net_ctx *ctx)
 {
 	return -ENOSYS;
 }

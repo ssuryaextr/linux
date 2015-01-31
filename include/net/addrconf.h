@@ -56,15 +56,15 @@ struct prefix_info {
 int addrconf_init(void);
 void addrconf_cleanup(void);
 
-int addrconf_add_ifaddr(struct net *net, void __user *arg);
-int addrconf_del_ifaddr(struct net *net, void __user *arg);
-int addrconf_set_dstaddr(struct net *net, void __user *arg);
+int addrconf_add_ifaddr(struct net_ctx *ctx, void __user *arg);
+int addrconf_del_ifaddr(struct net_ctx *ctx, void __user *arg);
+int addrconf_set_dstaddr(struct net_ctx *ctx, void __user *arg);
 
-int ipv6_chk_addr(struct net *net, const struct in6_addr *addr,
+int ipv6_chk_addr(struct net_ctx *ctx, const struct in6_addr *addr,
 		  const struct net_device *dev, int strict);
 
 #if defined(CONFIG_IPV6_MIP6) || defined(CONFIG_IPV6_MIP6_MODULE)
-int ipv6_chk_home_addr(struct net *net, const struct in6_addr *addr);
+int ipv6_chk_home_addr(struct net_ctx *ctx, const struct in6_addr *addr);
 #endif
 
 bool ipv6_chk_custom_prefix(const struct in6_addr *addr,
@@ -73,11 +73,11 @@ bool ipv6_chk_custom_prefix(const struct in6_addr *addr,
 
 int ipv6_chk_prefix(const struct in6_addr *addr, struct net_device *dev);
 
-struct inet6_ifaddr *ipv6_get_ifaddr(struct net *net,
+struct inet6_ifaddr *ipv6_get_ifaddr(struct net_ctx *ctx,
 				     const struct in6_addr *addr,
 				     struct net_device *dev, int strict);
 
-int ipv6_dev_get_saddr(struct net *net, const struct net_device *dev,
+int ipv6_dev_get_saddr(struct net_ctx *ctx, const struct net_device *dev,
 		       const struct in6_addr *daddr, unsigned int srcprefs,
 		       struct in6_addr *saddr);
 int __ipv6_get_lladdr(struct inet6_dev *idev, struct in6_addr *addr,
@@ -116,7 +116,7 @@ static inline int addrconf_finite_timeout(unsigned long timeout)
 int ipv6_addr_label_init(void);
 void ipv6_addr_label_cleanup(void);
 void ipv6_addr_label_rtnl_register(void);
-u32 ipv6_addr_label(struct net *net, const struct in6_addr *addr,
+u32 ipv6_addr_label(struct net_ctx *ctx, const struct in6_addr *addr,
 		    int type, int ifindex);
 
 /*
@@ -205,9 +205,9 @@ void ipv6_sock_ac_close(struct sock *sk);
 int __ipv6_dev_ac_inc(struct inet6_dev *idev, const struct in6_addr *addr);
 int __ipv6_dev_ac_dec(struct inet6_dev *idev, const struct in6_addr *addr);
 void ipv6_ac_destroy_dev(struct inet6_dev *idev);
-bool ipv6_chk_acast_addr(struct net *net, struct net_device *dev,
+bool ipv6_chk_acast_addr(struct net_ctx *ctx, struct net_device *dev,
 			 const struct in6_addr *addr);
-bool ipv6_chk_acast_addr_src(struct net *net, struct net_device *dev,
+bool ipv6_chk_acast_addr_src(struct net_ctx *ctx, struct net_device *dev,
 			     const struct in6_addr *addr);
 
 /* Device notifier */
@@ -215,7 +215,7 @@ int register_inet6addr_notifier(struct notifier_block *nb);
 int unregister_inet6addr_notifier(struct notifier_block *nb);
 int inet6addr_notifier_call_chain(unsigned long val, void *v);
 
-void inet6_netconf_notify_devconf(struct net *net, int type, int ifindex,
+void inet6_netconf_notify_devconf(struct net_ctx *ctx, int type, int ifindex,
 				  struct ipv6_devconf *devconf);
 
 /**

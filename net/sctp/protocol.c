@@ -359,8 +359,8 @@ static int sctp_v4_addr_valid(union sctp_addr *addr,
 /* Should this be available for binding?   */
 static int sctp_v4_available(union sctp_addr *addr, struct sctp_sock *sp)
 {
-	struct net *net = sock_net(&sp->inet.sk);
-	int ret = inet_addr_type(net, addr->v4.sin_addr.s_addr);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(&sp->inet.sk);
+	int ret = inet_addr_type(&sk_ctx, addr->v4.sin_addr.s_addr);
 
 
 	if (addr->v4.sin_addr.s_addr != htonl(INADDR_ANY) &&
@@ -421,6 +421,7 @@ static sctp_scope_t sctp_v4_scope(union sctp_addr *addr)
 static void sctp_v4_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
 				struct flowi *fl, struct sock *sk)
 {
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 	struct sctp_association *asoc = t->asoc;
 	struct rtable *rt;
 	struct flowi4 *fl4 = &fl->u.ip4;
@@ -447,7 +448,7 @@ static void sctp_v4_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
 	pr_debug("%s: dst:%pI4, src:%pI4 - ", __func__, &fl4->daddr,
 		 &fl4->saddr);
 
-	rt = ip_route_output_key(sock_net(sk), fl4);
+	rt = ip_route_output_key(&sk_ctx, fl4);
 	if (!IS_ERR(rt))
 		dst = &rt->dst;
 
@@ -498,7 +499,7 @@ static void sctp_v4_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
 					     daddr->v4.sin_addr.s_addr,
 					     laddr->a.v4.sin_addr.s_addr);
 
-			rt = ip_route_output_key(sock_net(sk), fl4);
+			rt = ip_route_output_key(&sk_ctx, fl4);
 			if (!IS_ERR(rt)) {
 				dst = &rt->dst;
 				goto out_unlock;

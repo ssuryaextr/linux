@@ -110,18 +110,18 @@ struct in_device;
 int ip_rt_init(void);
 void rt_cache_flush(struct net *net);
 void rt_flush_dev(struct net_device *dev);
-struct rtable *__ip_route_output_key(struct net *, struct flowi4 *flp);
-struct rtable *ip_route_output_flow(struct net *, struct flowi4 *flp,
+struct rtable *__ip_route_output_key(struct net_ctx *, struct flowi4 *flp);
+struct rtable *ip_route_output_flow(struct net_ctx *, struct flowi4 *flp,
 				    struct sock *sk);
-struct dst_entry *ipv4_blackhole_route(struct net *net,
+struct dst_entry *ipv4_blackhole_route(struct net_ctx *ctx,
 				       struct dst_entry *dst_orig);
 
-static inline struct rtable *ip_route_output_key(struct net *net, struct flowi4 *flp)
+static inline struct rtable *ip_route_output_key(struct net_ctx *ctx, struct flowi4 *flp)
 {
-	return ip_route_output_flow(net, flp, NULL);
+	return ip_route_output_flow(ctx, flp, NULL);
 }
 
-static inline struct rtable *ip_route_output(struct net *net, __be32 daddr,
+static inline struct rtable *ip_route_output(struct net_ctx *ctx, __be32 daddr,
 					     __be32 saddr, u8 tos, int oif)
 {
 	struct flowi4 fl4 = {
@@ -130,10 +130,10 @@ static inline struct rtable *ip_route_output(struct net *net, __be32 daddr,
 		.daddr = daddr,
 		.saddr = saddr,
 	};
-	return ip_route_output_key(net, &fl4);
+	return ip_route_output_key(ctx, &fl4);
 }
 
-static inline struct rtable *ip_route_output_ports(struct net *net, struct flowi4 *fl4,
+static inline struct rtable *ip_route_output_ports(struct net_ctx *ctx, struct flowi4 *fl4,
 						   struct sock *sk,
 						   __be32 daddr, __be32 saddr,
 						   __be16 dport, __be16 sport,
@@ -145,10 +145,10 @@ static inline struct rtable *ip_route_output_ports(struct net *net, struct flowi
 			   daddr, saddr, dport, sport);
 	if (sk)
 		security_sk_classify_flow(sk, flowi4_to_flowi(fl4));
-	return ip_route_output_flow(net, fl4, sk);
+	return ip_route_output_flow(ctx, fl4, sk);
 }
 
-static inline struct rtable *ip_route_output_gre(struct net *net, struct flowi4 *fl4,
+static inline struct rtable *ip_route_output_gre(struct net_ctx *ctx, struct flowi4 *fl4,
 						 __be32 daddr, __be32 saddr,
 						 __be32 gre_key, __u8 tos, int oif)
 {
@@ -159,7 +159,7 @@ static inline struct rtable *ip_route_output_gre(struct net *net, struct flowi4 
 	fl4->flowi4_tos = tos;
 	fl4->flowi4_proto = IPPROTO_GRE;
 	fl4->fl4_gre_key = gre_key;
-	return ip_route_output_key(net, fl4);
+	return ip_route_output_key(ctx, fl4);
 }
 
 int ip_route_input_noref(struct sk_buff *skb, __be32 dst, __be32 src,
@@ -179,19 +179,19 @@ static inline int ip_route_input(struct sk_buff *skb, __be32 dst, __be32 src,
 	return err;
 }
 
-void ipv4_update_pmtu(struct sk_buff *skb, struct net *net, u32 mtu, int oif,
+void ipv4_update_pmtu(struct sk_buff *skb, struct net_ctx *ctx, u32 mtu, int oif,
 		      u32 mark, u8 protocol, int flow_flags);
 void ipv4_sk_update_pmtu(struct sk_buff *skb, struct sock *sk, u32 mtu);
-void ipv4_redirect(struct sk_buff *skb, struct net *net, int oif, u32 mark,
+void ipv4_redirect(struct sk_buff *skb, struct net_ctx *ctx, int oif, u32 mark,
 		   u8 protocol, int flow_flags);
 void ipv4_sk_redirect(struct sk_buff *skb, struct sock *sk);
 void ip_rt_send_redirect(struct sk_buff *skb);
 
-unsigned int inet_addr_type(struct net *net, __be32 addr);
-unsigned int inet_dev_addr_type(struct net *net, const struct net_device *dev,
+unsigned int inet_addr_type(struct net_ctx *ctx, __be32 addr);
+unsigned int inet_dev_addr_type(struct net_ctx *ctx, const struct net_device *dev,
 				__be32 addr);
 void ip_rt_multicast_event(struct in_device *);
-int ip_rt_ioctl(struct net *, unsigned int cmd, void __user *arg);
+int ip_rt_ioctl(struct net_ctx *, unsigned int cmd, void __user *arg);
 void ip_rt_get_source(u8 *src, struct sk_buff *skb, struct rtable *rt);
 
 struct in_ifaddr;
@@ -260,21 +260,21 @@ static inline struct rtable *ip_route_connect(struct flowi4 *fl4,
 					      __be16 sport, __be16 dport,
 					      struct sock *sk)
 {
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 	struct rtable *rt;
 
 	ip_route_connect_init(fl4, dst, src, tos, oif, protocol,
 			      sport, dport, sk);
 
 	if (!dst || !src) {
-		rt = __ip_route_output_key(net, fl4);
+		rt = __ip_route_output_key(&sk_ctx, fl4);
 		if (IS_ERR(rt))
 			return rt;
 		ip_rt_put(rt);
 		flowi4_update_output(fl4, oif, tos, fl4->daddr, fl4->saddr);
 	}
 	security_sk_classify_flow(sk, flowi4_to_flowi(fl4));
-	return ip_route_output_flow(net, fl4, sk);
+	return ip_route_output_flow(&sk_ctx, fl4, sk);
 }
 
 static inline struct rtable *ip_route_newports(struct flowi4 *fl4, struct rtable *rt,
@@ -283,6 +283,8 @@ static inline struct rtable *ip_route_newports(struct flowi4 *fl4, struct rtable
 					       struct sock *sk)
 {
 	if (sport != orig_sport || dport != orig_dport) {
+		struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
+
 		fl4->fl4_dport = dport;
 		fl4->fl4_sport = sport;
 		ip_rt_put(rt);
@@ -290,7 +292,7 @@ static inline struct rtable *ip_route_newports(struct flowi4 *fl4, struct rtable
 				     RT_CONN_FLAGS(sk), fl4->daddr,
 				     fl4->saddr);
 		security_sk_classify_flow(sk, flowi4_to_flowi(fl4));
-		return ip_route_output_flow(sock_net(sk), fl4, sk);
+		return ip_route_output_flow(&sk_ctx, fl4, sk);
 	}
 	return rt;
 }

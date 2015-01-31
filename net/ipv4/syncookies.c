@@ -302,6 +302,7 @@ struct sock *cookie_v4_check(struct sock *sk, struct sk_buff *skb)
 	struct rtable *rt;
 	__u8 rcv_wscale;
 	struct flowi4 fl4;
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	if (!sysctl_tcp_syncookies || !th->ack || th->rst)
 		goto out;
@@ -372,7 +373,7 @@ struct sock *cookie_v4_check(struct sock *sk, struct sk_buff *skb)
 			   opt->srr ? opt->faddr : ireq->ir_rmt_addr,
 			   ireq->ir_loc_addr, th->source, th->dest);
 	security_req_classify_flow(req, flowi4_to_flowi(&fl4));
-	rt = ip_route_output_key(sock_net(sk), &fl4);
+	rt = ip_route_output_key(&sk_ctx, &fl4);
 	if (IS_ERR(rt)) {
 		reqsk_free(req);
 		goto out;

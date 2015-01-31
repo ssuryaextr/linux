@@ -428,7 +428,9 @@ static inline int ip_rt_proc_init(void)
 
 static inline bool rt_is_expired(const struct rtable *rth)
 {
-	return rth->rt_genid != rt_genid_ipv4(dev_net(rth->dst.dev));
+	struct net_ctx dev_ctx = DEV_NET_CTX(rth->dst.dev);
+
+	return rth->rt_genid != rt_genid_ipv4(&dev_ctx);
 }
 
 void rt_cache_flush(struct net *net)
@@ -625,6 +627,7 @@ static void update_or_create_fnhe(struct fib_nh *nh, __be32 daddr, __be32 gw,
 	unsigned int i;
 	int depth;
 	u32 hval = fnhe_hashfun(daddr);
+	struct net_ctx dev_ctx = DEV_NET_CTX(nh->nh_dev);
 
 	spin_lock_bh(&fnhe_lock);
 
@@ -671,7 +674,7 @@ static void update_or_create_fnhe(struct fib_nh *nh, __be32 daddr, __be32 gw,
 			fnhe->fnhe_next = hash->chain;
 			rcu_assign_pointer(hash->chain, fnhe);
 		}
-		fnhe->fnhe_genid = fnhe_genid(dev_net(nh->nh_dev));
+		fnhe->fnhe_genid = fnhe_genid(&dev_ctx);
 		fnhe->fnhe_daddr = daddr;
 		fnhe->fnhe_gw = gw;
 		fnhe->fnhe_pmtu = pmtu;
@@ -709,7 +712,7 @@ static void __ip_do_redirect(struct rtable *rt, struct sk_buff *skb, struct flow
 	struct in_device *in_dev;
 	struct fib_result res;
 	struct neighbour *n;
-	struct net *net;
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 
 	switch (icmp_hdr(skb)->code & 7) {
 	case ICMP_REDIR_NET:
@@ -729,7 +732,6 @@ static void __ip_do_redirect(struct rtable *rt, struct sk_buff *skb, struct flow
 	if (!in_dev)
 		return;
 
-	net = dev_net(dev);
 	if (new_gw == old_gw || !IN_DEV_RX_REDIRECTS(in_dev) ||
 	    ipv4_is_multicast(new_gw) || ipv4_is_lbcast(new_gw) ||
 	    ipv4_is_zeronet(new_gw))
@@ -741,7 +743,7 @@ static void __ip_do_redirect(struct rtable *rt, struct sk_buff *skb, struct flow
 		if (IN_DEV_SEC_REDIRECTS(in_dev) && ip_fib_check_default(new_gw, dev))
 			goto reject_redirect;
 	} else {
-		if (inet_addr_type(net, new_gw) != RTN_UNICAST)
+		if (inet_addr_type(&dev_ctx, new_gw) != RTN_UNICAST)
 			goto reject_redirect;
 	}
 
@@ -750,7 +752,7 @@ static void __ip_do_redirect(struct rtable *rt, struct sk_buff *skb, struct flow
 		if (!(n->nud_state & NUD_VALID)) {
 			neigh_event_send(n, NULL);
 		} else {
-			if (fib_lookup(net, fl4, &res) == 0) {
+			if (fib_lookup(&dev_ctx, fl4, &res) == 0) {
 				struct fib_nh *nh = &FIB_RES_NH(res);
 
 				update_or_create_fnhe(nh, fl4->daddr, new_gw,
@@ -959,6 +961,7 @@ static void __ip_rt_update_pmtu(struct rtable *rt, struct flowi4 *fl4, u32 mtu)
 {
 	struct dst_entry *dst = &rt->dst;
 	struct fib_result res;
+	struct net_ctx dev_ctx = DEV_NET_CTX(dst->dev);
 
 	if (dst_metric_locked(dst, RTAX_MTU))
 		return;
@@ -974,7 +977,7 @@ static void __ip_rt_update_pmtu(struct rtable *rt, struct flowi4 *fl4, u32 mtu)
 		return;
 
 	rcu_read_lock();
-	if (fib_lookup(dev_net(dst->dev), fl4, &res) == 0) {
+	if (fib_lookup(&dev_ctx, fl4, &res) == 0) {
 		struct fib_nh *nh = &FIB_RES_NH(res);
 
 		update_or_create_fnhe(nh, fl4->daddr, 0, mtu,
@@ -993,7 +996,7 @@ static void ip_rt_update_pmtu(struct dst_entry *dst, struct sock *sk,
 	__ip_rt_update_pmtu(rt, &fl4, mtu);
 }
 
-void ipv4_update_pmtu(struct sk_buff *skb, struct net *net, u32 mtu,
+void ipv4_update_pmtu(struct sk_buff *skb, struct net_ctx *ctx, u32 mtu,
 		      int oif, u32 mark, u8 protocol, int flow_flags)
 {
 	const struct iphdr *iph = (const struct iphdr *) skb->data;
@@ -1001,11 +1004,11 @@ void ipv4_update_pmtu(struct sk_buff *skb, struct net *net, u32 mtu,
 	struct rtable *rt;
 
 	if (!mark)
-		mark = IP4_REPLY_MARK(net, skb->mark);
+		mark = IP4_REPLY_MARK(ctx->net, skb->mark);
 
 	__build_flow_key(&fl4, NULL, iph, oif,
 			 RT_TOS(iph->tos), protocol, mark, flow_flags);
-	rt = __ip_route_output_key(net, &fl4);
+	rt = __ip_route_output_key(ctx, &fl4);
 	if (!IS_ERR(rt)) {
 		__ip_rt_update_pmtu(rt, &fl4, mtu);
 		ip_rt_put(rt);
@@ -1018,13 +1021,14 @@ static void __ipv4_sk_update_pmtu(struct sk_buff *skb, struct sock *sk, u32 mtu)
 	const struct iphdr *iph = (const struct iphdr *) skb->data;
 	struct flowi4 fl4;
 	struct rtable *rt;
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	__build_flow_key(&fl4, sk, iph, 0, 0, 0, 0, 0);
 
 	if (!fl4.flowi4_mark)
-		fl4.flowi4_mark = IP4_REPLY_MARK(sock_net(sk), skb->mark);
+		fl4.flowi4_mark = IP4_REPLY_MARK(sk_ctx.net, skb->mark);
 
-	rt = __ip_route_output_key(sock_net(sk), &fl4);
+	rt = __ip_route_output_key(&sk_ctx, &fl4);
 	if (!IS_ERR(rt)) {
 		__ip_rt_update_pmtu(rt, &fl4, mtu);
 		ip_rt_put(rt);
@@ -1038,6 +1042,7 @@ void ipv4_sk_update_pmtu(struct sk_buff *skb, struct sock *sk, u32 mtu)
 	struct rtable *rt;
 	struct dst_entry *odst = NULL;
 	bool new = false;
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	bh_lock_sock(sk);
 
@@ -1055,7 +1060,7 @@ void ipv4_sk_update_pmtu(struct sk_buff *skb, struct sock *sk, u32 mtu)
 
 	rt = (struct rtable *)odst;
 	if (odst->obsolete && odst->ops->check(odst, 0) == NULL) {
-		rt = ip_route_output_flow(sock_net(sk), &fl4, sk);
+		rt = ip_route_output_flow(&sk_ctx, &fl4, sk);
 		if (IS_ERR(rt))
 			goto out;
 
@@ -1068,7 +1073,7 @@ void ipv4_sk_update_pmtu(struct sk_buff *skb, struct sock *sk, u32 mtu)
 		if (new)
 			dst_release(&rt->dst);
 
-		rt = ip_route_output_flow(sock_net(sk), &fl4, sk);
+		rt = ip_route_output_flow(&sk_ctx, &fl4, sk);
 		if (IS_ERR(rt))
 			goto out;
 
@@ -1084,7 +1089,7 @@ out:
 }
 EXPORT_SYMBOL_GPL(ipv4_sk_update_pmtu);
 
-void ipv4_redirect(struct sk_buff *skb, struct net *net,
+void ipv4_redirect(struct sk_buff *skb, struct net_ctx *ctx,
 		   int oif, u32 mark, u8 protocol, int flow_flags)
 {
 	const struct iphdr *iph = (const struct iphdr *) skb->data;
@@ -1093,7 +1098,7 @@ void ipv4_redirect(struct sk_buff *skb, struct net *net,
 
 	__build_flow_key(&fl4, NULL, iph, oif,
 			 RT_TOS(iph->tos), protocol, mark, flow_flags);
-	rt = __ip_route_output_key(net, &fl4);
+	rt = __ip_route_output_key(ctx, &fl4);
 	if (!IS_ERR(rt)) {
 		__ip_do_redirect(rt, skb, &fl4, false);
 		ip_rt_put(rt);
@@ -1106,9 +1111,10 @@ void ipv4_sk_redirect(struct sk_buff *skb, struct sock *sk)
 	const struct iphdr *iph = (const struct iphdr *) skb->data;
 	struct flowi4 fl4;
 	struct rtable *rt;
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	__build_flow_key(&fl4, sk, iph, 0, 0, 0, 0, 0);
-	rt = __ip_route_output_key(sock_net(sk), &fl4);
+	rt = __ip_route_output_key(&sk_ctx, &fl4);
 	if (!IS_ERR(rt)) {
 		__ip_do_redirect(rt, skb, &fl4, false);
 		ip_rt_put(rt);
@@ -1173,6 +1179,7 @@ void ip_rt_get_source(u8 *addr, struct sk_buff *skb, struct rtable *rt)
 		struct fib_result res;
 		struct flowi4 fl4;
 		struct iphdr *iph;
+		struct net_ctx dev_ctx = DEV_NET_CTX(rt->dst.dev);
 
 		iph = ip_hdr(skb);
 
@@ -1185,8 +1192,8 @@ void ip_rt_get_source(u8 *addr, struct sk_buff *skb, struct rtable *rt)
 		fl4.flowi4_mark = skb->mark;
 
 		rcu_read_lock();
-		if (fib_lookup(dev_net(rt->dst.dev), &fl4, &res) == 0)
-			src = FIB_RES_PREFSRC(dev_net(rt->dst.dev), res);
+		if (fib_lookup(&dev_ctx, &fl4, &res) == 0)
+			src = FIB_RES_PREFSRC(&dev_ctx, res);
 		else
 			src = inet_select_addr(rt->dst.dev,
 					       rt_nexthop(rt, iph->daddr),
@@ -1269,7 +1276,8 @@ static bool rt_bind_exception(struct rtable *rt, struct fib_nh_exception *fnhe,
 	if (daddr == fnhe->fnhe_daddr) {
 		struct rtable __rcu **porig;
 		struct rtable *orig;
-		int genid = fnhe_genid(dev_net(rt->dst.dev));
+		struct net_ctx dev_ctx = DEV_NET_CTX(rt->dst.dev);
+		int genid = fnhe_genid(&dev_ctx);
 
 		if (rt_is_input_route(rt))
 			porig = &fnhe->fnhe_rth_input;
@@ -1443,6 +1451,7 @@ static int ip_route_input_mc(struct sk_buff *skb, __be32 daddr, __be32 saddr,
 {
 	struct rtable *rth;
 	struct in_device *in_dev = __in_dev_get_rcu(dev);
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 	u32 itag = 0;
 	int err;
 
@@ -1478,7 +1487,7 @@ static int ip_route_input_mc(struct sk_buff *skb, __be32 daddr, __be32 saddr,
 #endif
 	rth->dst.output = ip_rt_bug;
 
-	rth->rt_genid	= rt_genid_ipv4(dev_net(dev));
+	rth->rt_genid	= rt_genid_ipv4(&dev_ctx);
 	rth->rt_flags	= RTCF_MULTICAST;
 	rth->rt_type	= RTN_MULTICAST;
 	rth->rt_is_input= 1;
@@ -1548,6 +1557,7 @@ static int __mkroute_input(struct sk_buff *skb,
 	unsigned int flags = 0;
 	bool do_cache;
 	u32 itag = 0;
+	struct net_ctx dev_ctx;
 
 	/* get a working reference to the output device */
 	out_dev = __in_dev_get_rcu(FIB_RES_DEV(*res));
@@ -1608,7 +1618,8 @@ static int __mkroute_input(struct sk_buff *skb,
 		goto cleanup;
 	}
 
-	rth->rt_genid = rt_genid_ipv4(dev_net(rth->dst.dev));
+	dev_ctx.net = dev_net(rth->dst.dev);
+	rth->rt_genid = rt_genid_ipv4(&dev_ctx);
 	rth->rt_flags = flags;
 	rth->rt_type = res->type;
 	rth->rt_is_input = 1;
@@ -1666,7 +1677,8 @@ static int ip_route_input_slow(struct sk_buff *skb, __be32 daddr, __be32 saddr,
 	u32		itag = 0;
 	struct rtable	*rth;
 	int		err = -EINVAL;
-	struct net    *net = dev_net(dev);
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
+	struct net *net = dev_ctx.net;
 	bool do_cache;
 
 	/* IP on this device is disabled. */
@@ -1715,7 +1727,7 @@ static int ip_route_input_slow(struct sk_buff *skb, __be32 daddr, __be32 saddr,
 	fl4.flowi4_scope = RT_SCOPE_UNIVERSE;
 	fl4.daddr = daddr;
 	fl4.saddr = saddr;
-	err = fib_lookup(net, &fl4, &res);
+	err = fib_lookup(&dev_ctx, &fl4, &res);
 	if (err != 0) {
 		if (!IN_DEV_FORWARD(in_dev))
 			err = -EHOSTUNREACH;
@@ -1782,7 +1794,7 @@ local_input:
 	rth->dst.tclassid = itag;
 #endif
 
-	rth->rt_genid = rt_genid_ipv4(net);
+	rth->rt_genid = rt_genid_ipv4(&dev_ctx);
 	rth->rt_flags 	= flags|RTCF_LOCAL;
 	rth->rt_type	= res.type;
 	rth->rt_is_input = 1;
@@ -1897,6 +1909,7 @@ static struct rtable *__mkroute_output(const struct fib_result *res,
 	u16 type = res->type;
 	struct rtable *rth;
 	bool do_cache;
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev_out);
 
 	in_dev = __in_dev_get_rcu(dev_out);
 	if (!in_dev)
@@ -1971,7 +1984,7 @@ add:
 
 	rth->dst.output = ip_output;
 
-	rth->rt_genid = rt_genid_ipv4(dev_net(dev_out));
+	rth->rt_genid = rt_genid_ipv4(&dev_ctx);
 	rth->rt_flags	= flags;
 	rth->rt_type	= type;
 	rth->rt_is_input = 0;
@@ -2011,8 +2024,9 @@ add:
  * Major route resolver routine.
  */
 
-struct rtable *__ip_route_output_key(struct net *net, struct flowi4 *fl4)
+struct rtable *__ip_route_output_key(struct net_ctx *ctx, struct flowi4 *fl4)
 {
+	struct net *net = ctx->net;
 	struct net_device *dev_out = NULL;
 	__u8 tos = RT_FL_TOS(fl4);
 	unsigned int flags = 0;
@@ -2051,7 +2065,7 @@ struct rtable *__ip_route_output_key(struct net *net, struct flowi4 *fl4)
 		    (ipv4_is_multicast(fl4->daddr) ||
 		     ipv4_is_lbcast(fl4->daddr))) {
 			/* It is equivalent to inet_addr_type(saddr) == RTN_LOCAL */
-			dev_out = __ip_dev_find(net, fl4->saddr, false);
+			dev_out = __ip_dev_find(ctx, fl4->saddr, false);
 			if (dev_out == NULL)
 				goto out;
 
@@ -2076,14 +2090,14 @@ struct rtable *__ip_route_output_key(struct net *net, struct flowi4 *fl4)
 
 		if (!(fl4->flowi4_flags & FLOWI_FLAG_ANYSRC)) {
 			/* It is equivalent to inet_addr_type(saddr) == RTN_LOCAL */
-			if (!__ip_dev_find(net, fl4->saddr, false))
+			if (!__ip_dev_find(ctx, fl4->saddr, false))
 				goto out;
 		}
 	}
 
 
 	if (fl4->flowi4_oif) {
-		dev_out = dev_get_by_index_rcu(net, fl4->flowi4_oif);
+		dev_out = dev_get_by_index_rcu_ctx(ctx, fl4->flowi4_oif);
 		rth = ERR_PTR(-ENODEV);
 		if (dev_out == NULL)
 			goto out;
@@ -2121,7 +2135,7 @@ struct rtable *__ip_route_output_key(struct net *net, struct flowi4 *fl4)
 		goto make_route;
 	}
 
-	if (fib_lookup(net, fl4, &res)) {
+	if (fib_lookup(ctx, fl4, &res)) {
 		res.fi = NULL;
 		res.table = NULL;
 		if (fl4->flowi4_oif) {
@@ -2177,7 +2191,7 @@ struct rtable *__ip_route_output_key(struct net *net, struct flowi4 *fl4)
 		fib_select_default(&res);
 
 	if (!fl4->saddr)
-		fl4->saddr = FIB_RES_PREFSRC(net, res);
+		fl4->saddr = FIB_RES_PREFSRC(ctx, res);
 
 	dev_out = FIB_RES_DEV(res);
 	fl4->flowi4_oif = dev_out->ifindex;
@@ -2232,7 +2246,7 @@ static struct dst_ops ipv4_dst_blackhole_ops = {
 	.neigh_lookup		=	ipv4_neigh_lookup,
 };
 
-struct dst_entry *ipv4_blackhole_route(struct net *net, struct dst_entry *dst_orig)
+struct dst_entry *ipv4_blackhole_route(struct net_ctx *net_ctx, struct dst_entry *dst_orig)
 {
 	struct rtable *ort = (struct rtable *) dst_orig;
 	struct rtable *rt;
@@ -2253,7 +2267,7 @@ struct dst_entry *ipv4_blackhole_route(struct net *net, struct dst_entry *dst_or
 		rt->rt_iif = ort->rt_iif;
 		rt->rt_pmtu = ort->rt_pmtu;
 
-		rt->rt_genid = rt_genid_ipv4(net);
+		rt->rt_genid = rt_genid_ipv4(net_ctx);
 		rt->rt_flags = ort->rt_flags;
 		rt->rt_type = ort->rt_type;
 		rt->rt_gateway = ort->rt_gateway;
@@ -2269,16 +2283,16 @@ struct dst_entry *ipv4_blackhole_route(struct net *net, struct dst_entry *dst_or
 	return rt ? &rt->dst : ERR_PTR(-ENOMEM);
 }
 
-struct rtable *ip_route_output_flow(struct net *net, struct flowi4 *flp4,
+struct rtable *ip_route_output_flow(struct net_ctx *ctx, struct flowi4 *flp4,
 				    struct sock *sk)
 {
-	struct rtable *rt = __ip_route_output_key(net, flp4);
+	struct rtable *rt = __ip_route_output_key(ctx, flp4);
 
 	if (IS_ERR(rt))
 		return rt;
 
 	if (flp4->flowi4_proto)
-		rt = (struct rtable *)xfrm_lookup_route(net, &rt->dst,
+		rt = (struct rtable *)xfrm_lookup_route(ctx, &rt->dst,
 							flowi4_to_flowi(flp4),
 							sk, 0);
 
@@ -2286,7 +2300,7 @@ struct rtable *ip_route_output_flow(struct net *net, struct flowi4 *flp4,
 }
 EXPORT_SYMBOL_GPL(ip_route_output_flow);
 
-static int rt_fill_info(struct net *net,  __be32 dst, __be32 src,
+static int rt_fill_info(struct net_ctx *ctx,  __be32 dst, __be32 src,
 			struct flowi4 *fl4, struct sk_buff *skb, u32 portid,
 			u32 seq, int event, int nowait, unsigned int flags)
 {
@@ -2367,8 +2381,8 @@ static int rt_fill_info(struct net *net,  __be32 dst, __be32 src,
 	if (rt_is_input_route(rt)) {
 #ifdef CONFIG_IP_MROUTE
 		if (ipv4_is_multicast(dst) && !ipv4_is_local_multicast(dst) &&
-		    IPV4_DEVCONF_ALL(net, MC_FORWARDING)) {
-			int err = ipmr_get_route(net, skb,
+		    IPV4_DEVCONF_ALL(ctx->net, MC_FORWARDING)) {
+			int err = ipmr_get_route(ctx->net, skb,
 						 fl4->saddr, fl4->daddr,
 						 r, nowait);
 			if (err <= 0) {
@@ -2401,7 +2415,7 @@ nla_put_failure:
 
 static int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr *nlh)
 {
-	struct net *net = sock_net(in_skb->sk);
+	struct net_ctx sk_ctx = SKB_NET_CTX_SOCK(in_skb);
 	struct rtmsg *rtm;
 	struct nlattr *tb[RTA_MAX+1];
 	struct rtable *rt = NULL;
@@ -2450,7 +2464,7 @@ static int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr *nlh)
 	if (iif) {
 		struct net_device *dev;
 
-		dev = __dev_get_by_index(net, iif);
+		dev = __dev_get_by_index_ctx(&sk_ctx, iif);
 		if (dev == NULL) {
 			err = -ENODEV;
 			goto errout_free;
@@ -2467,7 +2481,7 @@ static int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr *nlh)
 		if (err == 0 && rt->dst.error)
 			err = -rt->dst.error;
 	} else {
-		rt = ip_route_output_key(net, &fl4);
+		rt = ip_route_output_key(&sk_ctx, &fl4);
 
 		err = 0;
 		if (IS_ERR(rt))
@@ -2481,13 +2495,13 @@ static int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr *nlh)
 	if (rtm->rtm_flags & RTM_F_NOTIFY)
 		rt->rt_flags |= RTCF_NOTIFY;
 
-	err = rt_fill_info(net, dst, src, &fl4, skb,
+	err = rt_fill_info(&sk_ctx, dst, src, &fl4, skb,
 			   NETLINK_CB(in_skb).portid, nlh->nlmsg_seq,
 			   RTM_NEWROUTE, 0, 0);
 	if (err < 0)
 		goto errout_free;
 
-	err = rtnl_unicast(skb, net, NETLINK_CB(in_skb).portid);
+	err = rtnl_unicast(skb, sk_ctx.net, NETLINK_CB(in_skb).portid);
 errout:
 	return err;
 

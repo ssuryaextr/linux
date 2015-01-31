@@ -127,7 +127,7 @@ static struct kmem_cache *mrt_cachep __read_mostly;
 static struct mr_table *ipmr_new_table(struct net *net, u32 id);
 static void ipmr_free_table(struct mr_table *mrt);
 
-static void ip_mr_forward(struct net *net, struct mr_table *mrt,
+static void ip_mr_forward(struct net_ctx *ctx, struct mr_table *mrt,
 			  struct sk_buff *skb, struct mfc_cache *cache,
 			  int local);
 static int ipmr_cache_report(struct mr_table *mrt,
@@ -244,11 +244,12 @@ static const struct fib_rules_ops __net_initconst ipmr_rules_ops_template = {
 
 static int __net_init ipmr_rules_init(struct net *net)
 {
+	struct net_ctx ctx = { .net = net };
 	struct fib_rules_ops *ops;
 	struct mr_table *mrt;
 	int err;
 
-	ops = fib_rules_register(&ipmr_rules_ops_template, net);
+	ops = fib_rules_register(&ipmr_rules_ops_template, &ctx);
 	if (IS_ERR(ops))
 		return PTR_ERR(ops);
 
@@ -710,9 +711,10 @@ static void ipmr_update_thresholds(struct mr_table *mrt, struct mfc_cache *cache
 	}
 }
 
-static int vif_add(struct net *net, struct mr_table *mrt,
+static int vif_add(struct net_ctx *ctx, struct mr_table *mrt,
 		   struct vifctl *vifc, int mrtsock)
 {
+	struct net *net = ctx->net;
 	int vifi = vifc->vifc_vifi;
 	struct vif_device *v = &mrt->vif_table[vifi];
 	struct net_device *dev;
@@ -764,7 +766,7 @@ static int vif_add(struct net *net, struct mr_table *mrt,
 				return -EADDRNOTAVAIL;
 			}
 		} else {
-			dev = ip_dev_find(net, vifc->vifc_lcl_addr.s_addr);
+			dev = ip_dev_find(ctx, vifc->vifc_lcl_addr.s_addr);
 		}
 		if (!dev)
 			return -EADDRNOTAVAIL;
@@ -903,7 +905,7 @@ static struct mfc_cache *ipmr_cache_alloc_unres(void)
  *	A cache entry has gone into a resolved state from queued
  */
 
-static void ipmr_cache_resolve(struct net *net, struct mr_table *mrt,
+static void ipmr_cache_resolve(struct net_ctx *ctx, struct mr_table *mrt,
 			       struct mfc_cache *uc, struct mfc_cache *c)
 {
 	struct sk_buff *skb;
@@ -927,9 +929,9 @@ static void ipmr_cache_resolve(struct net *net, struct mr_table *mrt,
 				memset(&e->msg, 0, sizeof(e->msg));
 			}
 
-			rtnl_unicast(skb, net, NETLINK_CB(skb).portid);
+			rtnl_unicast(skb, ctx->net, NETLINK_CB(skb).portid);
 		} else {
-			ip_mr_forward(net, mrt, skb, c, 0);
+			ip_mr_forward(ctx, mrt, skb, c, 0);
 		}
 	}
 }
@@ -1121,7 +1123,7 @@ static int ipmr_mfc_delete(struct mr_table *mrt, struct mfcctl *mfc, int parent)
 	return -ENOENT;
 }
 
-static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
+static int ipmr_mfc_add(struct net_ctx *ctx, struct mr_table *mrt,
 			struct mfcctl *mfc, int mrtsock, int parent)
 {
 	bool found = false;
@@ -1190,7 +1192,7 @@ static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
 	spin_unlock_bh(&mfc_unres_lock);
 
 	if (found) {
-		ipmr_cache_resolve(net, mrt, uc, c);
+		ipmr_cache_resolve(ctx, mrt, uc, c);
 		ipmr_cache_free(uc);
 	}
 	mroute_netlink_event(mrt, c, RTM_NEWROUTE);
@@ -1272,7 +1274,8 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval, unsi
 	int ret, parent = 0;
 	struct vifctl vif;
 	struct mfcctl mfc;
-	struct net *net = sock_net(sk);
+	struct net_ctx ctx = SOCK_NET_CTX(sk);
+	struct net *net = ctx.net;
 	struct mr_table *mrt;
 
 	if (sk->sk_type != SOCK_RAW ||
@@ -1324,7 +1327,7 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval, unsi
 			return -ENFILE;
 		rtnl_lock();
 		if (optname == MRT_ADD_VIF) {
-			ret = vif_add(net, mrt, &vif,
+			ret = vif_add(&ctx, mrt, &vif,
 				      sk == rtnl_dereference(mrt->mroute_sk));
 		} else {
 			ret = vif_delete(mrt, vif.vifc_vifi, 0, NULL);
@@ -1351,7 +1354,7 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval, unsi
 		if (optname == MRT_DEL_MFC || optname == MRT_DEL_MFC_PROXY)
 			ret = ipmr_mfc_delete(mrt, &mfc, parent);
 		else
-			ret = ipmr_mfc_add(net, mrt, &mfc,
+			ret = ipmr_mfc_add(&ctx, mrt, &mfc,
 					   sk == rtnl_dereference(mrt->mroute_sk),
 					   parent);
 		rtnl_unlock();
@@ -1687,7 +1690,7 @@ static inline int ipmr_forward_finish(struct sk_buff *skb)
  *	Processing handlers for ipmr_forward
  */
 
-static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
+static void ipmr_queue_xmit(struct net_ctx *ctx, struct mr_table *mrt,
 			    struct sk_buff *skb, struct mfc_cache *c, int vifi)
 {
 	const struct iphdr *iph = ip_hdr(skb);
@@ -1712,7 +1715,7 @@ static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
 #endif
 
 	if (vif->flags & VIFF_TUNNEL) {
-		rt = ip_route_output_ports(net, &fl4, NULL,
+		rt = ip_route_output_ports(ctx, &fl4, NULL,
 					   vif->remote, vif->local,
 					   0, 0,
 					   IPPROTO_IPIP,
@@ -1721,7 +1724,7 @@ static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
 			goto out_free;
 		encap = sizeof(struct iphdr);
 	} else {
-		rt = ip_route_output_ports(net, &fl4, NULL, iph->daddr, 0,
+		rt = ip_route_output_ports(ctx, &fl4, NULL, iph->daddr, 0,
 					   0, 0,
 					   IPPROTO_IPIP,
 					   RT_TOS(iph->tos), vif->link);
@@ -1800,7 +1803,7 @@ static int ipmr_find_vif(struct mr_table *mrt, struct net_device *dev)
 
 /* "local" means that we should preserve one skb (for local delivery) */
 
-static void ip_mr_forward(struct net *net, struct mr_table *mrt,
+static void ip_mr_forward(struct net_ctx *ctx, struct mr_table *mrt,
 			  struct sk_buff *skb, struct mfc_cache *cache,
 			  int local)
 {
@@ -1893,7 +1896,7 @@ forward:
 				struct sk_buff *skb2 = skb_clone(skb, GFP_ATOMIC);
 
 				if (skb2)
-					ipmr_queue_xmit(net, mrt, skb2, cache,
+					ipmr_queue_xmit(ctx, mrt, skb2, cache,
 							psend);
 			}
 			psend = ct;
@@ -1905,9 +1908,9 @@ last_forward:
 			struct sk_buff *skb2 = skb_clone(skb, GFP_ATOMIC);
 
 			if (skb2)
-				ipmr_queue_xmit(net, mrt, skb2, cache, psend);
+				ipmr_queue_xmit(ctx, mrt, skb2, cache, psend);
 		} else {
-			ipmr_queue_xmit(net, mrt, skb, cache, psend);
+			ipmr_queue_xmit(ctx, mrt, skb, cache, psend);
 			return;
 		}
 	}
@@ -1949,7 +1952,8 @@ static struct mr_table *ipmr_rt_fib_lookup(struct net *net, struct sk_buff *skb)
 int ip_mr_input(struct sk_buff *skb)
 {
 	struct mfc_cache *cache;
-	struct net *net = dev_net(skb->dev);
+	struct net_ctx dev_ctx = SKB_NET_CTX_DEV(skb);
+	struct net *net = dev_ctx.net;
 	int local = skb_rtable(skb)->rt_flags & RTCF_LOCAL;
 	struct mr_table *mrt;
 
@@ -2024,7 +2028,7 @@ int ip_mr_input(struct sk_buff *skb)
 	}
 
 	read_lock(&mrt_lock);
-	ip_mr_forward(net, mrt, skb, cache, local);
+	ip_mr_forward(&dev_ctx, mrt, skb, cache, local);
 	read_unlock(&mrt_lock);
 
 	if (local)
@@ -2046,6 +2050,7 @@ static int __pim_rcv(struct mr_table *mrt, struct sk_buff *skb,
 {
 	struct net_device *reg_dev = NULL;
 	struct iphdr *encap;
+	struct net_ctx dev_ctx;
 
 	encap = (struct iphdr *)(skb_transport_header(skb) + pimlen);
 	/*
@@ -2073,7 +2078,8 @@ static int __pim_rcv(struct mr_table *mrt, struct sk_buff *skb,
 	skb->protocol = htons(ETH_P_IP);
 	skb->ip_summed = CHECKSUM_NONE;
 
-	skb_tunnel_rx(skb, reg_dev, dev_net(reg_dev));
+	dev_ctx.net = dev_net(reg_dev);
+	skb_tunnel_rx(skb, reg_dev, &dev_ctx);
 
 	netif_rx(skb);
 

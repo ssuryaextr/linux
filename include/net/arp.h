@@ -48,7 +48,7 @@ static inline struct neighbour *__ipv4_neigh_lookup(struct net_device *dev, u32 
 
 void arp_init(void);
 int arp_find(unsigned char *haddr, struct sk_buff *skb);
-int arp_ioctl(struct net *net, unsigned int cmd, void __user *arg);
+int arp_ioctl(struct net_ctx *ctx, unsigned int cmd, void __user *arg);
 void arp_send(int type, int ptype, __be32 dest_ip,
 	      struct net_device *dev, __be32 src_ip,
 	      const unsigned char *dest_hw,

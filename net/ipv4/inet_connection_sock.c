@@ -95,7 +95,8 @@ int inet_csk_get_port(struct sock *sk, unsigned short snum)
 	struct inet_bind_hashbucket *head;
 	struct inet_bind_bucket *tb;
 	int ret, attempts = 5;
-	struct net *net = sock_net(sk);
+	struct net_ctx net_ctx = SOCK_NET_CTX(sk);
+	struct net *net = net_ctx.net;
 	int smallest_size = -1, smallest_rover;
 	kuid_t uid = sock_i_uid(sk);
 
@@ -116,7 +117,7 @@ again:
 					hashinfo->bhash_size)];
 			spin_lock(&head->lock);
 			inet_bind_bucket_for_each(tb, &head->chain)
-				if (net_eq(ib_net(tb), net) && tb->port == rover) {
+				if (ib_net_ctx_eq(tb, &net_ctx) && tb->port == rover) {
 					if (((tb->fastreuse > 0 &&
 					      sk->sk_reuse &&
 					      sk->sk_state != TCP_LISTEN) ||
@@ -170,7 +171,7 @@ have_snum:
 				hashinfo->bhash_size)];
 		spin_lock(&head->lock);
 		inet_bind_bucket_for_each(tb, &head->chain)
-			if (net_eq(ib_net(tb), net) && tb->port == snum)
+			if (ib_net_ctx_eq(tb, &net_ctx) && tb->port == snum)
 				goto tb_found;
 	}
 	tb = NULL;
@@ -204,7 +205,7 @@ tb_found:
 tb_not_found:
 	ret = 1;
 	if (!tb && (tb = inet_bind_bucket_create(hashinfo->bind_bucket_cachep,
-					net, head, snum)) == NULL)
+					&net_ctx, head, snum)) == NULL)
 		goto fail_unlock;
 	if (hlist_empty(&tb->owners)) {
 		if (sk->sk_reuse && sk->sk_state != TCP_LISTEN)
@@ -403,6 +404,7 @@ struct dst_entry *inet_csk_route_req(struct sock *sk,
 	const struct inet_request_sock *ireq = inet_rsk(req);
 	struct ip_options_rcu *opt = inet_rsk(req)->opt;
 	struct net *net = sock_net(sk);
+	struct net_ctx ctx = { .net = net };
 	int flags = inet_sk_flowi_flags(sk);
 
 	flowi4_init_output(fl4, sk->sk_bound_dev_if, ireq->ir_mark,
@@ -412,7 +414,7 @@ struct dst_entry *inet_csk_route_req(struct sock *sk,
 			   (opt && opt->opt.srr) ? opt->opt.faddr : ireq->ir_rmt_addr,
 			   ireq->ir_loc_addr, ireq->ir_rmt_port, inet_sk(sk)->inet_sport);
 	security_req_classify_flow(req, flowi4_to_flowi(fl4));
-	rt = ip_route_output_flow(net, fl4, sk);
+	rt = ip_route_output_flow(&ctx, fl4, sk);
 	if (IS_ERR(rt))
 		goto no_route;
 	if (opt && opt->opt.is_strictroute && rt->rt_uses_gateway)
@@ -435,6 +437,7 @@ struct dst_entry *inet_csk_route_child_sock(struct sock *sk,
 	struct inet_sock *newinet = inet_sk(newsk);
 	struct ip_options_rcu *opt;
 	struct net *net = sock_net(sk);
+	struct net_ctx ctx = { .net = net };
 	struct flowi4 *fl4;
 	struct rtable *rt;
 
@@ -448,7 +451,7 @@ struct dst_entry *inet_csk_route_child_sock(struct sock *sk,
 			   (opt && opt->opt.srr) ? opt->opt.faddr : ireq->ir_rmt_addr,
 			   ireq->ir_loc_addr, ireq->ir_rmt_port, inet_sk(sk)->inet_sport);
 	security_req_classify_flow(req, flowi4_to_flowi(fl4));
-	rt = ip_route_output_flow(net, fl4, sk);
+	rt = ip_route_output_flow(&ctx, fl4, sk);
 	if (IS_ERR(rt))
 		goto no_route;
 	if (opt && opt->opt.is_strictroute && rt->rt_uses_gateway)
@@ -898,13 +901,14 @@ static struct dst_entry *inet_csk_rebuild_route(struct sock *sk, struct flowi *f
 	__be32 daddr = inet->inet_daddr;
 	struct flowi4 *fl4;
 	struct rtable *rt;
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	rcu_read_lock();
 	inet_opt = rcu_dereference(inet->inet_opt);
 	if (inet_opt && inet_opt->opt.srr)
 		daddr = inet_opt->opt.faddr;
 	fl4 = &fl->u.ip4;
-	rt = ip_route_output_ports(sock_net(sk), fl4, sk, daddr,
+	rt = ip_route_output_ports(&sk_ctx, fl4, sk, daddr,
 				   inet->inet_saddr, inet->inet_dport,
 				   inet->inet_sport, sk->sk_protocol,
 				   RT_CONN_FLAGS(sk), sk->sk_bound_dev_if);

@@ -5394,10 +5394,10 @@ void netdev_adjacent_add_links(struct net_device *dev)
 {
 	struct netdev_adjacent *iter;
 
-	struct net *net = dev_net(dev);
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 
 	list_for_each_entry(iter, &dev->adj_list.upper, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
+		if (!dev_net_ctx_eq(iter->dev, &dev_ctx))
 			continue;
 		netdev_adjacent_sysfs_add(iter->dev, dev,
 					  &iter->dev->adj_list.lower);
@@ -5406,7 +5406,7 @@ void netdev_adjacent_add_links(struct net_device *dev)
 	}
 
 	list_for_each_entry(iter, &dev->adj_list.lower, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
+		if (!dev_net_ctx_eq(iter->dev, &dev_ctx))
 			continue;
 		netdev_adjacent_sysfs_add(iter->dev, dev,
 					  &iter->dev->adj_list.upper);
@@ -5419,10 +5419,10 @@ void netdev_adjacent_del_links(struct net_device *dev)
 {
 	struct netdev_adjacent *iter;
 
-	struct net *net = dev_net(dev);
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 
 	list_for_each_entry(iter, &dev->adj_list.upper, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
+		if (!dev_net_ctx_eq(iter->dev, &dev_ctx))
 			continue;
 		netdev_adjacent_sysfs_del(iter->dev, dev->name,
 					  &iter->dev->adj_list.lower);
@@ -5431,7 +5431,7 @@ void netdev_adjacent_del_links(struct net_device *dev)
 	}
 
 	list_for_each_entry(iter, &dev->adj_list.lower, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
+		if (!dev_net_ctx_eq(iter->dev, &dev_ctx))
 			continue;
 		netdev_adjacent_sysfs_del(iter->dev, dev->name,
 					  &iter->dev->adj_list.upper);
@@ -5444,10 +5444,10 @@ void netdev_adjacent_rename_links(struct net_device *dev, char *oldname)
 {
 	struct netdev_adjacent *iter;
 
-	struct net *net = dev_net(dev);
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 
 	list_for_each_entry(iter, &dev->adj_list.upper, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
+		if (!dev_net_ctx_eq(iter->dev, &dev_ctx))
 			continue;
 		netdev_adjacent_sysfs_del(iter->dev, oldname,
 					  &iter->dev->adj_list.lower);
@@ -5456,7 +5456,7 @@ void netdev_adjacent_rename_links(struct net_device *dev, char *oldname)
 	}
 
 	list_for_each_entry(iter, &dev->adj_list.lower, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
+		if (!dev_net_ctx_eq(iter->dev, &dev_ctx))
 			continue;
 		netdev_adjacent_sysfs_del(iter->dev, oldname,
 					  &iter->dev->adj_list.upper);

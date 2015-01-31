@@ -150,10 +150,11 @@ static void fib_flush(struct net *net)
  * Find address type as if only "dev" was present in the system. If
  * on_dev is NULL then all interfaces are taken into consideration.
  */
-static inline unsigned int __inet_dev_addr_type(struct net *net,
+static inline unsigned int __inet_dev_addr_type(struct net_ctx *ctx,
 						const struct net_device *dev,
 						__be32 addr)
 {
+	struct net *net = ctx->net;
 	struct flowi4		fl4 = { .daddr = addr };
 	struct fib_result	res;
 	unsigned int ret = RTN_BROADCAST;
@@ -179,16 +180,17 @@ static inline unsigned int __inet_dev_addr_type(struct net *net,
 	return ret;
 }
 
-unsigned int inet_addr_type(struct net *net, __be32 addr)
+unsigned int inet_addr_type(struct net_ctx *ctx, __be32 addr)
 {
-	return __inet_dev_addr_type(net, NULL, addr);
+	return __inet_dev_addr_type(ctx, NULL, addr);
 }
 EXPORT_SYMBOL(inet_addr_type);
 
-unsigned int inet_dev_addr_type(struct net *net, const struct net_device *dev,
+unsigned int inet_dev_addr_type(struct net_ctx *ctx,
+				const struct net_device *dev,
 				__be32 addr)
 {
-	return __inet_dev_addr_type(net, dev, addr);
+	return __inet_dev_addr_type(ctx, dev, addr);
 }
 EXPORT_SYMBOL(inet_dev_addr_type);
 
@@ -199,7 +201,7 @@ __be32 fib_compute_spec_dst(struct sk_buff *skb)
 	struct fib_result res;
 	struct rtable *rt;
 	struct flowi4 fl4;
-	struct net *net;
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 	int scope;
 
 	rt = skb_rtable(skb);
@@ -210,8 +212,6 @@ __be32 fib_compute_spec_dst(struct sk_buff *skb)
 	in_dev = __in_dev_get_rcu(dev);
 	BUG_ON(!in_dev);
 
-	net = dev_net(dev);
-
 	scope = RT_SCOPE_UNIVERSE;
 	if (!ipv4_is_zeronet(ip_hdr(skb)->saddr)) {
 		fl4.flowi4_oif = 0;
@@ -221,8 +221,8 @@ __be32 fib_compute_spec_dst(struct sk_buff *skb)
 		fl4.flowi4_tos = RT_TOS(ip_hdr(skb)->tos);
 		fl4.flowi4_scope = scope;
 		fl4.flowi4_mark = IN_DEV_SRC_VMARK(in_dev) ? skb->mark : 0;
-		if (!fib_lookup(net, &fl4, &res))
-			return FIB_RES_PREFSRC(net, res);
+		if (!fib_lookup(&dev_ctx, &fl4, &res))
+			return FIB_RES_PREFSRC(&dev_ctx, res);
 	} else {
 		scope = RT_SCOPE_LINK;
 	}
@@ -245,7 +245,7 @@ static int __fib_validate_source(struct sk_buff *skb, __be32 src, __be32 dst,
 	int ret, no_addr;
 	struct fib_result res;
 	struct flowi4 fl4;
-	struct net *net;
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 	bool dev_match;
 
 	fl4.flowi4_oif = 0;
@@ -259,8 +259,7 @@ static int __fib_validate_source(struct sk_buff *skb, __be32 src, __be32 dst,
 
 	fl4.flowi4_mark = IN_DEV_SRC_VMARK(idev) ? skb->mark : 0;
 
-	net = dev_net(dev);
-	if (fib_lookup(net, &fl4, &res))
+	if (fib_lookup(&dev_ctx, &fl4, &res))
 		goto last_resort;
 	if (res.type != RTN_UNICAST &&
 	    (res.type != RTN_LOCAL || !IN_DEV_ACCEPT_LOCAL(idev)))
@@ -295,7 +294,7 @@ static int __fib_validate_source(struct sk_buff *skb, __be32 src, __be32 dst,
 	fl4.flowi4_oif = dev->ifindex;
 
 	ret = 0;
-	if (fib_lookup(net, &fl4, &res) == 0) {
+	if (fib_lookup(&dev_ctx, &fl4, &res) == 0) {
 		if (res.type == RTN_UNICAST)
 			ret = FIB_RES_NH(res).nh_scope >= RT_SCOPE_HOST;
 	}
@@ -346,9 +345,10 @@ static int put_rtax(struct nlattr *mx, int len, int type, u32 value)
 	return len + nla_total_size(4);
 }
 
-static int rtentry_to_fib_config(struct net *net, int cmd, struct rtentry *rt,
-				 struct fib_config *cfg)
+static int rtentry_to_fib_config(struct net_ctx *ctx, int cmd,
+				 struct rtentry *rt, struct fib_config *cfg)
 {
+	struct net *net = ctx->net;
 	__be32 addr;
 	int plen;
 
@@ -437,7 +437,7 @@ static int rtentry_to_fib_config(struct net *net, int cmd, struct rtentry *rt,
 	if (rt->rt_gateway.sa_family == AF_INET && addr) {
 		cfg->fc_gw = addr;
 		if (rt->rt_flags & RTF_GATEWAY &&
-		    inet_addr_type(net, addr) == RTN_UNICAST)
+		    inet_addr_type(ctx, addr) == RTN_UNICAST)
 			cfg->fc_scope = RT_SCOPE_UNIVERSE;
 	}
 
@@ -478,8 +478,9 @@ static int rtentry_to_fib_config(struct net *net, int cmd, struct rtentry *rt,
  * Handle IP routing ioctl calls.
  * These are used to manipulate the routing tables
  */
-int ip_rt_ioctl(struct net *net, unsigned int cmd, void __user *arg)
+int ip_rt_ioctl(struct net_ctx *ctx, unsigned int cmd, void __user *arg)
 {
+	struct net *net = ctx->net;
 	struct fib_config cfg;
 	struct rtentry rt;
 	int err;
@@ -494,7 +495,7 @@ int ip_rt_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 			return -EFAULT;
 
 		rtnl_lock();
-		err = rtentry_to_fib_config(net, cmd, &rt, &cfg);
+		err = rtentry_to_fib_config(ctx, cmd, &rt, &cfg);
 		if (err == 0) {
 			struct fib_table *tb;
 
@@ -534,7 +535,7 @@ const struct nla_policy rtm_ipv4_policy[RTA_MAX + 1] = {
 	[RTA_FLOW]		= { .type = NLA_U32 },
 };
 
-static int rtm_to_fib_config(struct net *net, struct sk_buff *skb,
+static int rtm_to_fib_config(struct net_ctx *ctx, struct sk_buff *skb,
 			     struct nlmsghdr *nlh, struct fib_config *cfg)
 {
 	struct nlattr *attr;
@@ -559,7 +560,7 @@ static int rtm_to_fib_config(struct net *net, struct sk_buff *skb,
 
 	cfg->fc_nlinfo.portid = NETLINK_CB(skb).portid;
 	cfg->fc_nlinfo.nlh = nlh;
-	cfg->fc_nlinfo.nl_net = net;
+	cfg->fc_nlinfo.nl_net = ctx->net;
 
 	if (cfg->fc_type > RTN_MAX) {
 		err = -EINVAL;
@@ -607,12 +608,13 @@ errout:
 
 static int inet_rtm_delroute(struct sk_buff *skb, struct nlmsghdr *nlh)
 {
-	struct net *net = sock_net(skb->sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(skb->sk);
+	struct net *net = sk_ctx.net;
 	struct fib_config cfg;
 	struct fib_table *tb;
 	int err;
 
-	err = rtm_to_fib_config(net, skb, nlh, &cfg);
+	err = rtm_to_fib_config(&sk_ctx, skb, nlh, &cfg);
 	if (err < 0)
 		goto errout;
 
@@ -629,12 +631,13 @@ errout:
 
 static int inet_rtm_newroute(struct sk_buff *skb, struct nlmsghdr *nlh)
 {
-	struct net *net = sock_net(skb->sk);
+	struct net_ctx sk_ctx = SKB_NET_CTX_SOCK(skb);
+	struct net *net = sk_ctx.net;
 	struct fib_config cfg;
 	struct fib_table *tb;
 	int err;
 
-	err = rtm_to_fib_config(net, skb, nlh, &cfg);
+	err = rtm_to_fib_config(&sk_ctx, skb, nlh, &cfg);
 	if (err < 0)
 		goto errout;
 
@@ -897,19 +900,21 @@ void fib_del_ifaddr(struct in_ifaddr *ifa, struct in_ifaddr *iprim)
 			fib_magic(RTM_DELROUTE, RTN_BROADCAST, any, 32, prim);
 	}
 	if (!(ok & LOCAL_OK)) {
+		struct net_ctx dev_ctx = DEV_NET_CTX(dev);
+
 		fib_magic(RTM_DELROUTE, RTN_LOCAL, ifa->ifa_local, 32, prim);
 
 		/* Check, that this local address finally disappeared. */
 		if (gone &&
-		    inet_addr_type(dev_net(dev), ifa->ifa_local) != RTN_LOCAL) {
+		    inet_addr_type(&dev_ctx, ifa->ifa_local) != RTN_LOCAL) {
 			/* And the last, but not the least thing.
 			 * We must flush stray FIB entries.
 			 *
 			 * First of all, we scan fib_info list searching
 			 * for stray nexthop entries, then ignite fib_flush.
 			 */
-			if (fib_sync_down_addr(dev_net(dev), ifa->ifa_local))
-				fib_flush(dev_net(dev));
+			if (fib_sync_down_addr(&dev_ctx, ifa->ifa_local))
+				fib_flush(dev_ctx.net);
 		}
 	}
 #undef LOCAL_OK

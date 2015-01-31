@@ -54,14 +54,14 @@ static unsigned int inet_sk_ehashfn(const struct sock *sk)
  * The bindhash mutex for snum's hash chain must be held here.
  */
 struct inet_bind_bucket *inet_bind_bucket_create(struct kmem_cache *cachep,
-						 struct net *net,
+						 struct net_ctx *ctx,
 						 struct inet_bind_hashbucket *head,
 						 const unsigned short snum)
 {
 	struct inet_bind_bucket *tb = kmem_cache_alloc(cachep, GFP_ATOMIC);
 
 	if (tb != NULL) {
-		write_pnet(&tb->ib_net_ctx.net, hold_net(net));
+		write_pnet(&tb->ib_net_ctx.net, hold_net(ctx->net));
 		tb->port      = snum;
 		tb->fastreuse = 0;
 		tb->fastreuseport = 0;
@@ -136,6 +136,7 @@ int __inet_inherit_port(struct sock *sk, struct sock *child)
 			table->bhash_size);
 	struct inet_bind_hashbucket *head = &table->bhash[bhash];
 	struct inet_bind_bucket *tb;
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	spin_lock(&head->lock);
 	tb = inet_csk(sk)->icsk_bind_hash;
@@ -146,13 +147,13 @@ int __inet_inherit_port(struct sock *sk, struct sock *child)
 		 * as that of the child socket. We have to look up or
 		 * create a new bind bucket for the child here. */
 		inet_bind_bucket_for_each(tb, &head->chain) {
-			if (net_eq(ib_net(tb), sock_net(sk)) &&
+			if (ib_net_ctx_eq(tb, &sk_ctx) &&
 			    tb->port == port)
 				break;
 		}
 		if (!tb) {
 			tb = inet_bind_bucket_create(table->bind_bucket_cachep,
-						     sock_net(sk), head, port);
+						     &sk_ctx, head, port);
 			if (!tb) {
 				spin_unlock(&head->lock);
 				return -ENOMEM;
@@ -166,14 +167,14 @@ int __inet_inherit_port(struct sock *sk, struct sock *child)
 }
 EXPORT_SYMBOL_GPL(__inet_inherit_port);
 
-static inline int compute_score(struct sock *sk, struct net *net,
+static inline int compute_score(struct sock *sk, struct net_ctx *ctx,
 				const unsigned short hnum, const __be32 daddr,
 				const int dif)
 {
 	int score = -1;
 	struct inet_sock *inet = inet_sk(sk);
 
-	if (net_eq(sock_net(sk), net) && inet->inet_num == hnum &&
+	if (sock_net_ctx_eq(sk, ctx) && inet->inet_num == hnum &&
 			!ipv6_only_sock(sk)) {
 		__be32 rcv_saddr = inet->inet_rcv_saddr;
 		score = sk->sk_family == PF_INET ? 2 : 1;
@@ -199,12 +200,13 @@ static inline int compute_score(struct sock *sk, struct net *net,
  */
 
 
-struct sock *__inet_lookup_listener(struct net *net,
+struct sock *__inet_lookup_listener(struct net_ctx *ctx,
 				    struct inet_hashinfo *hashinfo,
 				    const __be32 saddr, __be16 sport,
 				    const __be32 daddr, const unsigned short hnum,
 				    const int dif)
 {
+	struct net *net = ctx->net;
 	struct sock *sk, *result;
 	struct hlist_nulls_node *node;
 	unsigned int hash = inet_lhashfn(net, hnum);
@@ -217,7 +219,7 @@ begin:
 	result = NULL;
 	hiscore = 0;
 	sk_nulls_for_each_rcu(sk, node, &ilb->head) {
-		score = compute_score(sk, net, hnum, daddr, dif);
+		score = compute_score(sk, ctx, hnum, daddr, dif);
 		if (score > hiscore) {
 			result = sk;
 			hiscore = score;
@@ -244,7 +246,7 @@ begin:
 	if (result) {
 		if (unlikely(!atomic_inc_not_zero(&result->sk_refcnt)))
 			result = NULL;
-		else if (unlikely(compute_score(result, net, hnum, daddr,
+		else if (unlikely(compute_score(result, ctx, hnum, daddr,
 				  dif) < hiscore)) {
 			sock_put(result);
 			goto begin;
@@ -268,12 +270,13 @@ void sock_gen_put(struct sock *sk)
 }
 EXPORT_SYMBOL_GPL(sock_gen_put);
 
-struct sock *__inet_lookup_established(struct net *net,
+struct sock *__inet_lookup_established(struct net_ctx *ctx,
 				  struct inet_hashinfo *hashinfo,
 				  const __be32 saddr, const __be16 sport,
 				  const __be32 daddr, const u16 hnum,
 				  const int dif)
 {
+	struct net *net = ctx->net;
 	INET_ADDR_COOKIE(acookie, saddr, daddr);
 	const __portpair ports = INET_COMBINED_PORTS(sport, hnum);
 	struct sock *sk;
@@ -290,11 +293,11 @@ begin:
 	sk_nulls_for_each_rcu(sk, node, &head->chain) {
 		if (sk->sk_hash != hash)
 			continue;
-		if (likely(INET_MATCH(sk, net, acookie,
+		if (likely(INET_MATCH(sk, ctx, acookie,
 				      saddr, daddr, ports, dif))) {
 			if (unlikely(!atomic_inc_not_zero(&sk->sk_refcnt)))
 				goto out;
-			if (unlikely(!INET_MATCH(sk, net, acookie,
+			if (unlikely(!INET_MATCH(sk, ctx, acookie,
 						 saddr, daddr, ports, dif))) {
 				sock_gen_put(sk);
 				goto begin;
@@ -329,7 +332,8 @@ static int __inet_check_established(struct inet_timewait_death_row *death_row,
 	int dif = sk->sk_bound_dev_if;
 	INET_ADDR_COOKIE(acookie, saddr, daddr);
 	const __portpair ports = INET_COMBINED_PORTS(inet->inet_dport, lport);
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
+	struct net *net = sk_ctx.net;
 	unsigned int hash = inet_ehashfn(net, daddr, lport,
 					 saddr, inet->inet_dport);
 	struct inet_ehash_bucket *head = inet_ehash_bucket(hinfo, hash);
@@ -345,7 +349,7 @@ static int __inet_check_established(struct inet_timewait_death_row *death_row,
 		if (sk2->sk_hash != hash)
 			continue;
 
-		if (likely(INET_MATCH(sk2, net, acookie,
+		if (likely(INET_MATCH(sk2, &sk_ctx, acookie,
 					 saddr, daddr, ports, dif))) {
 			if (sk2->sk_state == TCP_TIME_WAIT) {
 				tw = inet_twsk(sk2);
@@ -485,7 +489,8 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 	struct inet_bind_hashbucket *head;
 	struct inet_bind_bucket *tb;
 	int ret;
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
+	struct net *net = sk_ctx.net;
 	int twrefcnt = 1;
 
 	if (!snum) {
@@ -511,7 +516,7 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 			 * unique enough.
 			 */
 			inet_bind_bucket_for_each(tb, &head->chain) {
-				if (net_eq(ib_net(tb), net) &&
+				if (ib_net_ctx_eq(tb, &sk_ctx) &&
 				    tb->port == port) {
 					if (tb->fastreuse >= 0 ||
 					    tb->fastreuseport >= 0)
@@ -525,7 +530,7 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 			}
 
 			tb = inet_bind_bucket_create(hinfo->bind_bucket_cachep,
-					net, head, port);
+					&sk_ctx, head, port);
 			if (!tb) {
 				spin_unlock(&head->lock);
 				break;

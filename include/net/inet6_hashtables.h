@@ -46,21 +46,21 @@ int __inet6_hash(struct sock *sk, struct inet_timewait_sock *twp);
  *
  * The sockhash lock must be held as a reader here.
  */
-struct sock *__inet6_lookup_established(struct net *net,
+struct sock *__inet6_lookup_established(struct net_ctx *ctx,
 					struct inet_hashinfo *hashinfo,
 					const struct in6_addr *saddr,
 					const __be16 sport,
 					const struct in6_addr *daddr,
 					const u16 hnum, const int dif);
 
-struct sock *inet6_lookup_listener(struct net *net,
+struct sock *inet6_lookup_listener(struct net_ctx *ctx,
 				   struct inet_hashinfo *hashinfo,
 				   const struct in6_addr *saddr,
 				   const __be16 sport,
 				   const struct in6_addr *daddr,
 				   const unsigned short hnum, const int dif);
 
-static inline struct sock *__inet6_lookup(struct net *net,
+static inline struct sock *__inet6_lookup(struct net_ctx *ctx,
 					  struct inet_hashinfo *hashinfo,
 					  const struct in6_addr *saddr,
 					  const __be16 sport,
@@ -68,12 +68,12 @@ static inline struct sock *__inet6_lookup(struct net *net,
 					  const u16 hnum,
 					  const int dif)
 {
-	struct sock *sk = __inet6_lookup_established(net, hashinfo, saddr,
+	struct sock *sk = __inet6_lookup_established(ctx, hashinfo, saddr,
 						sport, daddr, hnum, dif);
 	if (sk)
 		return sk;
 
-	return inet6_lookup_listener(net, hashinfo, saddr, sport,
+	return inet6_lookup_listener(ctx, hashinfo, saddr, sport,
 				     daddr, hnum, dif);
 }
 
@@ -84,29 +84,30 @@ static inline struct sock *__inet6_lookup_skb(struct inet_hashinfo *hashinfo,
 					      int iif)
 {
 	struct sock *sk = skb_steal_sock(skb);
+	struct net_ctx ctx = SKB_NET_CTX_DST(skb);
 
 	if (sk)
 		return sk;
 
-	return __inet6_lookup(dev_net(skb_dst(skb)->dev), hashinfo,
+	return __inet6_lookup(&ctx, hashinfo,
 			      &ipv6_hdr(skb)->saddr, sport,
 			      &ipv6_hdr(skb)->daddr, ntohs(dport),
 			      iif);
 }
 
-struct sock *inet6_lookup(struct net *net, struct inet_hashinfo *hashinfo,
+struct sock *inet6_lookup(struct net_ctx *ctx, struct inet_hashinfo *hashinfo,
 			  const struct in6_addr *saddr, const __be16 sport,
 			  const struct in6_addr *daddr, const __be16 dport,
 			  const int dif);
 #endif /* IS_ENABLED(CONFIG_IPV6) */
 
-#define INET6_MATCH(__sk, __net, __saddr, __daddr, __ports, __dif)	\
+#define INET6_MATCH(__sk, __ctx, __saddr, __daddr, __ports, __dif)	\
 	(((__sk)->sk_portpair == (__ports))			&&	\
 	 ((__sk)->sk_family == AF_INET6)			&&	\
 	 ipv6_addr_equal(&(__sk)->sk_v6_daddr, (__saddr))		&&	\
 	 ipv6_addr_equal(&(__sk)->sk_v6_rcv_saddr, (__daddr))	&&	\
 	 (!(__sk)->sk_bound_dev_if	||				\
 	   ((__sk)->sk_bound_dev_if == (__dif))) 		&&	\
-	 net_eq(sock_net(__sk), (__net)))
+	 sock_net_ctx_eq((__sk), (__net)))
 
 #endif /* _INET6_HASHTABLES_H */

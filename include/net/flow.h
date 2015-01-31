@@ -205,6 +205,7 @@ static inline size_t flow_key_size(u16 family)
 #define FLOW_DIR_FWD	2
 
 struct net;
+struct net_ctx;
 struct sock;
 struct flow_cache_ops;
 
@@ -222,7 +223,7 @@ typedef struct flow_cache_object *(*flow_resolve_t)(
 		struct net *net, const struct flowi *key, u16 family,
 		u8 dir, struct flow_cache_object *oldobj, void *ctx);
 
-struct flow_cache_object *flow_cache_lookup(struct net *net,
+struct flow_cache_object *flow_cache_lookup(struct net_ctx *net_ctx,
 					    const struct flowi *key, u16 family,
 					    u8 dir, flow_resolve_t resolver,
 					    void *ctx);

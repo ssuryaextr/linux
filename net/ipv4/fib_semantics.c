@@ -303,12 +303,13 @@ static struct fib_info *fib_find_info(const struct fib_info *nfi)
 	struct hlist_head *head;
 	struct fib_info *fi;
 	unsigned int hash;
+	const struct net_ctx *nfi_ctx = &nfi->fib_net_ctx;
 
 	hash = fib_info_hashfn(nfi);
 	head = &fib_info_hash[hash];
 
 	hlist_for_each_entry(fi, head, fib_hash) {
-		if (!net_eq(fi->fib_net, nfi->fib_net))
+		if (!fib_net_ctx_eq(fi, nfi_ctx))
 			continue;
 		if (fi->fib_nhs != nfi->fib_nhs)
 			continue;
@@ -587,10 +588,9 @@ static int fib_check_nh(struct fib_config *cfg, struct fib_info *fi,
 			struct fib_nh *nh)
 {
 	int err;
-	struct net *net;
+	struct net_ctx *net_ctx = &cfg->fc_nlinfo.nl_net_ctx;
 	struct net_device *dev;
 
-	net = cfg->fc_nlinfo.nl_net;
 	if (nh->nh_gw) {
 		struct fib_result res;
 
@@ -598,9 +598,9 @@ static int fib_check_nh(struct fib_config *cfg, struct fib_info *fi,
 
 			if (cfg->fc_scope >= RT_SCOPE_LINK)
 				return -EINVAL;
-			if (inet_addr_type(net, nh->nh_gw) != RTN_UNICAST)
+			if (inet_addr_type(net_ctx, nh->nh_gw) != RTN_UNICAST)
 				return -EINVAL;
-			dev = __dev_get_by_index(net, nh->nh_oif);
+			dev = __dev_get_by_index_ctx(net_ctx, nh->nh_oif);
 			if (!dev)
 				return -ENODEV;
 			if (!(dev->flags & IFF_UP))
@@ -622,7 +622,7 @@ static int fib_check_nh(struct fib_config *cfg, struct fib_info *fi,
 			/* It is not necessary, but requires a bit of thinking */
 			if (fl4.flowi4_scope < RT_SCOPE_LINK)
 				fl4.flowi4_scope = RT_SCOPE_LINK;
-			err = fib_lookup(net, &fl4, &res);
+			err = fib_lookup(net_ctx, &fl4, &res);
 			if (err) {
 				rcu_read_unlock();
 				return err;
@@ -646,7 +646,7 @@ static int fib_check_nh(struct fib_config *cfg, struct fib_info *fi,
 
 		rcu_read_lock();
 		err = -ENODEV;
-		in_dev = inetdev_by_index(net, nh->nh_oif);
+		in_dev = inetdev_by_index(net_ctx, nh->nh_oif);
 		if (in_dev == NULL)
 			goto out;
 		err = -ENETDOWN;
@@ -748,8 +748,10 @@ static void fib_info_hash_move(struct hlist_head *new_info_hash,
 	fib_info_hash_free(old_laddrhash, bytes);
 }
 
-__be32 fib_info_update_nh_saddr(struct net *net, struct fib_nh *nh)
+__be32 fib_info_update_nh_saddr(struct net_ctx *net_ctx, struct fib_nh *nh)
 {
+	struct net *net = net_ctx->net;
+
 	nh->nh_saddr = inet_select_addr(nh->nh_dev,
 					nh->nh_gw,
 					nh->nh_parent->fib_scope);
@@ -764,7 +766,8 @@ struct fib_info *fib_create_info(struct fib_config *cfg)
 	struct fib_info *fi = NULL;
 	struct fib_info *ofi;
 	int nhs = 1;
-	struct net *net = cfg->fc_nlinfo.nl_net;
+	struct net_ctx *net_ctx = &cfg->fc_nlinfo.nl_net_ctx;
+	struct net *net = net_ctx->net;
 
 	if (cfg->fc_type > RTN_MAX)
 		goto err_inval;
@@ -935,12 +938,12 @@ struct fib_info *fib_create_info(struct fib_config *cfg)
 	if (fi->fib_prefsrc) {
 		if (cfg->fc_type != RTN_LOCAL || !cfg->fc_dst ||
 		    fi->fib_prefsrc != cfg->fc_dst)
-			if (inet_addr_type(net, fi->fib_prefsrc) != RTN_LOCAL)
+			if (inet_addr_type(net_ctx, fi->fib_prefsrc) != RTN_LOCAL)
 				goto err_inval;
 	}
 
 	change_nexthops(fi) {
-		fib_info_update_nh_saddr(net, nexthop_nh);
+		fib_info_update_nh_saddr(net_ctx, nexthop_nh);
 	} endfor_nexthops(fi)
 
 link_it:
@@ -1087,7 +1090,7 @@ nla_put_failure:
  *   referring to it.
  * - device went down -> we must shutdown all nexthops going via it.
  */
-int fib_sync_down_addr(struct net *net, __be32 local)
+int fib_sync_down_addr(struct net_ctx *net_ctx, __be32 local)
 {
 	int ret = 0;
 	unsigned int hash = fib_laddr_hashfn(local);
@@ -1098,7 +1101,7 @@ int fib_sync_down_addr(struct net *net, __be32 local)
 		return 0;
 
 	hlist_for_each_entry(fi, head, fib_lhash) {
-		if (!net_eq(fi->fib_net, net))
+		if (!fib_net_ctx_eq(fi, net_ctx))
 			continue;
 		if (fi->fib_prefsrc == local) {
 			fi->fib_flags |= RTNH_F_DEAD;

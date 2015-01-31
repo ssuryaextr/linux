@@ -139,9 +139,10 @@ int __ip_options_echo(struct ip_options *dopt, struct sk_buff *skb,
 
 					if (soffset + 7 <= optlen) {
 						__be32 addr;
+						struct net_ctx ctx = SKB_NET_CTX_DST(skb);
 
 						memcpy(&addr, dptr+soffset-1, 4);
-						if (inet_addr_type(dev_net(skb_dst(skb)->dev), addr) != RTN_UNICAST) {
+						if (inet_addr_type(&ctx, addr) != RTN_UNICAST) {
 							dopt->ts_needtime = 1;
 							soffset += 8;
 						}
@@ -254,9 +255,10 @@ static void spec_dst_fill(__be32 *spec_dst, struct sk_buff *skb)
  * If opt == NULL, then skb->data should point to IP header.
  */
 
-int ip_options_compile(struct net *net,
+int ip_options_compile(struct net_ctx *net_ctx,
 		       struct ip_options *opt, struct sk_buff *skb)
 {
+	struct net *net = net_ctx->net;
 	__be32 spec_dst = htonl(INADDR_ANY);
 	unsigned char *pp_ptr = NULL;
 	struct rtable *rt = NULL;
@@ -399,7 +401,7 @@ int ip_options_compile(struct net *net,
 					{
 						__be32 addr;
 						memcpy(&addr, &optptr[optptr[2]-1], 4);
-						if (inet_addr_type(net, addr) == RTN_UNICAST)
+						if (inet_addr_type(net_ctx, addr) == RTN_UNICAST)
 							break;
 						if (skb)
 							timeptr = &optptr[optptr[2]+3];
@@ -516,13 +518,13 @@ static struct ip_options_rcu *ip_options_get_alloc(const int optlen)
 		       GFP_KERNEL);
 }
 
-static int ip_options_get_finish(struct net *net, struct ip_options_rcu **optp,
+static int ip_options_get_finish(struct net_ctx *net_ctx, struct ip_options_rcu **optp,
 				 struct ip_options_rcu *opt, int optlen)
 {
 	while (optlen & 3)
 		opt->opt.__data[optlen++] = IPOPT_END;
 	opt->opt.optlen = optlen;
-	if (optlen && ip_options_compile(net, &opt->opt, NULL)) {
+	if (optlen && ip_options_compile(net_ctx, &opt->opt, NULL)) {
 		kfree(opt);
 		return -EINVAL;
 	}
@@ -531,7 +533,7 @@ static int ip_options_get_finish(struct net *net, struct ip_options_rcu **optp,
 	return 0;
 }
 
-int ip_options_get_from_user(struct net *net, struct ip_options_rcu **optp,
+int ip_options_get_from_user(struct net_ctx *net_ctx, struct ip_options_rcu **optp,
 			     unsigned char __user *data, int optlen)
 {
 	struct ip_options_rcu *opt = ip_options_get_alloc(optlen);
@@ -542,10 +544,10 @@ int ip_options_get_from_user(struct net *net, struct ip_options_rcu **optp,
 		kfree(opt);
 		return -EFAULT;
 	}
-	return ip_options_get_finish(net, optp, opt, optlen);
+	return ip_options_get_finish(net_ctx, optp, opt, optlen);
 }
 
-int ip_options_get(struct net *net, struct ip_options_rcu **optp,
+int ip_options_get(struct net_ctx *net_ctx, struct ip_options_rcu **optp,
 		   unsigned char *data, int optlen)
 {
 	struct ip_options_rcu *opt = ip_options_get_alloc(optlen);
@@ -554,7 +556,7 @@ int ip_options_get(struct net *net, struct ip_options_rcu **optp,
 		return -ENOMEM;
 	if (optlen)
 		memcpy(opt->opt.__data, data, optlen);
-	return ip_options_get_finish(net, optp, opt, optlen);
+	return ip_options_get_finish(net_ctx, optp, opt, optlen);
 }
 
 void ip_forward_options(struct sk_buff *skb)

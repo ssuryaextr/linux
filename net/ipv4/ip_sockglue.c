@@ -219,7 +219,7 @@ void ip_cmsg_recv_offset(struct msghdr *msg, struct sk_buff *skb,
 }
 EXPORT_SYMBOL(ip_cmsg_recv_offset);
 
-int ip_cmsg_send(struct net *net, struct msghdr *msg, struct ipcm_cookie *ipc,
+int ip_cmsg_send(struct net_ctx *ctx, struct msghdr *msg, struct ipcm_cookie *ipc,
 		 bool allow_ipv6)
 {
 	int err, val;
@@ -249,7 +249,7 @@ int ip_cmsg_send(struct net *net, struct msghdr *msg, struct ipcm_cookie *ipc,
 		switch (cmsg->cmsg_type) {
 		case IP_RETOPTS:
 			err = cmsg->cmsg_len - CMSG_ALIGN(sizeof(struct cmsghdr));
-			err = ip_options_get(net, &ipc->opt, CMSG_DATA(cmsg),
+			err = ip_options_get(ctx, &ipc->opt, CMSG_DATA(cmsg),
 					     err < 40 ? err : 40);
 			if (err)
 				return err;
@@ -529,6 +529,8 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 {
 	struct inet_sock *inet = inet_sk(sk);
 	int val = 0, err;
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
+	struct net *net = sk_ctx.net;
 
 	switch (optname) {
 	case IP_PKTINFO:
@@ -580,7 +582,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 
 		if (optlen > 40)
 			goto e_inval;
-		err = ip_options_get_from_user(sock_net(sk), &opt,
+		err = ip_options_get_from_user(&sk_ctx, &opt,
 					       optval, optlen);
 		if (err)
 			break;
@@ -736,7 +738,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 			break;
 		}
 
-		dev = dev_get_by_index(sock_net(sk), ifindex);
+		dev = dev_get_by_index(net, ifindex);
 		err = -EADDRNOTAVAIL;
 		if (!dev)
 			break;
@@ -782,13 +784,15 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 		}
 
 		if (!mreq.imr_ifindex) {
+			struct net_ctx net_ctx = SOCK_NET_CTX(sk);
+
 			if (mreq.imr_address.s_addr == htonl(INADDR_ANY)) {
 				inet->mc_index = 0;
 				inet->mc_addr  = 0;
 				err = 0;
 				break;
 			}
-			dev = ip_dev_find(sock_net(sk), mreq.imr_address.s_addr);
+			dev = ip_dev_find(&net_ctx, mreq.imr_address.s_addr);
 			if (dev)
 				mreq.imr_ifindex = dev->ifindex;
 		} else

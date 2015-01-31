@@ -324,7 +324,7 @@ static struct sk_buff *igmpv3_newpack(struct net_device *dev, unsigned int mtu)
 	struct rtable *rt;
 	struct iphdr *pip;
 	struct igmpv3_report *pig;
-	struct net *net = dev_net(dev);
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 	struct flowi4 fl4;
 	int hlen = LL_RESERVED_SPACE(dev);
 	int tlen = dev->needed_tailroom;
@@ -341,7 +341,7 @@ static struct sk_buff *igmpv3_newpack(struct net_device *dev, unsigned int mtu)
 	}
 	skb->priority = TC_PRIO_CONTROL;
 
-	rt = ip_route_output_ports(net, &fl4, NULL, IGMPV3_ALL_MCR, 0,
+	rt = ip_route_output_ports(&dev_ctx, &fl4, NULL, IGMPV3_ALL_MCR, 0,
 				   0, 0,
 				   IPPROTO_IGMP, 0, dev->ifindex);
 	if (IS_ERR(rt)) {
@@ -669,7 +669,7 @@ static int igmp_send_report(struct in_device *in_dev, struct ip_mc_list *pmc,
 	struct igmphdr *ih;
 	struct rtable *rt;
 	struct net_device *dev = in_dev->dev;
-	struct net *net = dev_net(dev);
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 	__be32	group = pmc ? pmc->multiaddr : 0;
 	struct flowi4 fl4;
 	__be32	dst;
@@ -682,7 +682,7 @@ static int igmp_send_report(struct in_device *in_dev, struct ip_mc_list *pmc,
 	else
 		dst = group;
 
-	rt = ip_route_output_ports(net, &fl4, NULL, dst, 0,
+	rt = ip_route_output_ports(&dev_ctx, &fl4, NULL, dst, 0,
 				   0, 0,
 				   IPPROTO_IGMP, 0, dev->ifindex);
 	if (IS_ERR(rt))
@@ -1503,23 +1503,23 @@ void ip_mc_destroy_dev(struct in_device *in_dev)
 }
 
 /* RTNL is locked */
-static struct in_device *ip_mc_find_dev(struct net *net, struct ip_mreqn *imr)
+static struct in_device *ip_mc_find_dev(struct net_ctx *ctx, struct ip_mreqn *imr)
 {
 	struct net_device *dev = NULL;
 	struct in_device *idev = NULL;
 
 	if (imr->imr_ifindex) {
-		idev = inetdev_by_index(net, imr->imr_ifindex);
+		idev = inetdev_by_index(ctx, imr->imr_ifindex);
 		return idev;
 	}
 	if (imr->imr_address.s_addr) {
-		dev = __ip_dev_find(net, imr->imr_address.s_addr, false);
+		dev = __ip_dev_find(ctx, imr->imr_address.s_addr, false);
 		if (!dev)
 			return NULL;
 	}
 
 	if (!dev) {
-		struct rtable *rt = ip_route_output(net,
+		struct rtable *rt = ip_route_output(ctx,
 						    imr->imr_multiaddr.s_addr,
 						    0, 0, 0);
 		if (!IS_ERR(rt)) {
@@ -1860,7 +1860,7 @@ int ip_mc_join_group(struct sock *sk , struct ip_mreqn *imr)
 	struct ip_mc_socklist *iml = NULL, *i;
 	struct in_device *in_dev;
 	struct inet_sock *inet = inet_sk(sk);
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 	int ifindex;
 	int count = 0;
 
@@ -1869,7 +1869,7 @@ int ip_mc_join_group(struct sock *sk , struct ip_mreqn *imr)
 
 	rtnl_lock();
 
-	in_dev = ip_mc_find_dev(net, imr);
+	in_dev = ip_mc_find_dev(&sk_ctx, imr);
 
 	if (!in_dev) {
 		iml = NULL;
@@ -1935,13 +1935,13 @@ int ip_mc_leave_group(struct sock *sk, struct ip_mreqn *imr)
 	struct ip_mc_socklist *iml;
 	struct ip_mc_socklist __rcu **imlp;
 	struct in_device *in_dev;
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 	__be32 group = imr->imr_multiaddr.s_addr;
 	u32 ifindex;
 	int ret = -EADDRNOTAVAIL;
 
 	rtnl_lock();
-	in_dev = ip_mc_find_dev(net, imr);
+	in_dev = ip_mc_find_dev(&sk_ctx, imr);
 	if (!in_dev) {
 		ret = -ENODEV;
 		goto out;
@@ -1986,7 +1986,7 @@ int ip_mc_source(int add, int omode, struct sock *sk, struct
 	struct in_device *in_dev = NULL;
 	struct inet_sock *inet = inet_sk(sk);
 	struct ip_sf_socklist *psl;
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 	int leavegroup = 0;
 	int i, j, rv;
 
@@ -1998,7 +1998,7 @@ int ip_mc_source(int add, int omode, struct sock *sk, struct
 	imr.imr_multiaddr.s_addr = mreqs->imr_multiaddr;
 	imr.imr_address.s_addr = mreqs->imr_interface;
 	imr.imr_ifindex = ifindex;
-	in_dev = ip_mc_find_dev(net, &imr);
+	in_dev = ip_mc_find_dev(&sk_ctx, &imr);
 
 	if (!in_dev) {
 		err = -ENODEV;
@@ -2122,7 +2122,7 @@ int ip_mc_msfilter(struct sock *sk, struct ip_msfilter *msf, int ifindex)
 	struct in_device *in_dev;
 	struct inet_sock *inet = inet_sk(sk);
 	struct ip_sf_socklist *newpsl, *psl;
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 	int leavegroup = 0;
 
 	if (!ipv4_is_multicast(addr))
@@ -2136,7 +2136,7 @@ int ip_mc_msfilter(struct sock *sk, struct ip_msfilter *msf, int ifindex)
 	imr.imr_multiaddr.s_addr = msf->imsf_multiaddr;
 	imr.imr_address.s_addr = msf->imsf_interface;
 	imr.imr_ifindex = ifindex;
-	in_dev = ip_mc_find_dev(net, &imr);
+	in_dev = ip_mc_find_dev(&sk_ctx, &imr);
 
 	if (!in_dev) {
 		err = -ENODEV;
@@ -2209,7 +2209,7 @@ int ip_mc_msfget(struct sock *sk, struct ip_msfilter *msf,
 	struct in_device *in_dev;
 	struct inet_sock *inet = inet_sk(sk);
 	struct ip_sf_socklist *psl;
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	if (!ipv4_is_multicast(addr))
 		return -EINVAL;
@@ -2219,7 +2219,7 @@ int ip_mc_msfget(struct sock *sk, struct ip_msfilter *msf,
 	imr.imr_multiaddr.s_addr = msf->imsf_multiaddr;
 	imr.imr_address.s_addr = msf->imsf_interface;
 	imr.imr_ifindex = 0;
-	in_dev = ip_mc_find_dev(net, &imr);
+	in_dev = ip_mc_find_dev(&sk_ctx, &imr);
 
 	if (!in_dev) {
 		err = -ENODEV;
@@ -2366,7 +2366,7 @@ void ip_mc_drop_socket(struct sock *sk)
 {
 	struct inet_sock *inet = inet_sk(sk);
 	struct ip_mc_socklist *iml;
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	if (inet->mc_list == NULL)
 		return;
@@ -2376,7 +2376,7 @@ void ip_mc_drop_socket(struct sock *sk)
 		struct in_device *in_dev;
 
 		inet->mc_list = iml->next_rcu;
-		in_dev = inetdev_by_index(net, iml->multi.imr_ifindex);
+		in_dev = inetdev_by_index(&sk_ctx, iml->multi.imr_ifindex);
 		(void) ip_mc_leave_src(sk, iml, in_dev);
 		if (in_dev != NULL)
 			ip_mc_dec_group(in_dev, iml->multi.imr_multiaddr.s_addr);
@@ -2442,7 +2442,8 @@ struct igmp_mc_iter_state {
 
 static inline struct ip_mc_list *igmp_mc_get_first(struct seq_file *seq)
 {
-	struct net *net = seq_file_net(seq);
+	struct net_ctx *ctx = seq_file_net_ctx(seq);
+	struct net *net = ctx->net;
 	struct ip_mc_list *im = NULL;
 	struct igmp_mc_iter_state *state = igmp_mc_seq_private(seq);
 
@@ -2585,7 +2586,8 @@ struct igmp_mcf_iter_state {
 
 static inline struct ip_sf_list *igmp_mcf_get_first(struct seq_file *seq)
 {
-	struct net *net = seq_file_net(seq);
+	struct net_ctx *ctx = seq_file_net_ctx(seq);
+	struct net *net = ctx->net;
 	struct ip_sf_list *psf = NULL;
 	struct ip_mc_list *im = NULL;
 	struct igmp_mcf_iter_state *state = igmp_mcf_seq_private(seq);

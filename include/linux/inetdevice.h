@@ -153,18 +153,18 @@ int unregister_inetaddr_notifier(struct notifier_block *nb);
 void inet_netconf_notify_devconf(struct net *net, int type, int ifindex,
 				 struct ipv4_devconf *devconf);
 
-struct net_device *__ip_dev_find(struct net *net, __be32 addr, bool devref);
-static inline struct net_device *ip_dev_find(struct net *net, __be32 addr)
+struct net_device *__ip_dev_find(struct net_ctx *ctx, __be32 addr, bool devref);
+static inline struct net_device *ip_dev_find(struct net_ctx *ctx, __be32 addr)
 {
-	return __ip_dev_find(net, addr, true);
+	return __ip_dev_find(ctx, addr, true);
 }
 
 int inet_addr_onlink(struct in_device *in_dev, __be32 a, __be32 b);
-int devinet_ioctl(struct net *net, unsigned int cmd, void __user *);
+int devinet_ioctl(struct net_ctx *ctx, unsigned int cmd, void __user *);
 void devinet_init(void);
-struct in_device *inetdev_by_index(struct net *, int);
+struct in_device *inetdev_by_index(struct net_ctx *, int);
 __be32 inet_select_addr(const struct net_device *dev, __be32 dst, int scope);
-__be32 inet_confirm_addr(struct net *net, struct in_device *in_dev, __be32 dst,
+__be32 inet_confirm_addr(struct net_ctx *ctx, struct in_device *in_dev, __be32 dst,
 			 __be32 local, int scope);
 struct in_ifaddr *inet_ifa_byprefix(struct in_device *in_dev, __be32 prefix,
 				    __be32 mask);

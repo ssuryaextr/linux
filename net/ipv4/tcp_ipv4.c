@@ -341,9 +341,10 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	__u32 seq, snd_una;
 	__u32 remaining;
 	int err;
-	struct net *net = dev_net(icmp_skb->dev);
+	struct net_ctx dev_ctx = SKB_NET_CTX_DEV(icmp_skb);
+	struct net *net = dev_ctx.net;
 
-	sk = inet_lookup(net, &tcp_hashinfo, iph->daddr, th->dest,
+	sk = inet_lookup(&dev_ctx, &tcp_hashinfo, iph->daddr, th->dest,
 			iph->saddr, th->source, inet_iif(icmp_skb));
 	if (!sk) {
 		ICMP_INC_STATS_BH(net, ICMP_MIB_INERRORS);
@@ -592,7 +593,8 @@ static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 	int genhash;
 	struct sock *sk1 = NULL;
 #endif
-	struct net *net;
+	struct net_ctx ctx = SKB_NET_CTX_DST(skb);
+	struct net *net = ctx.net;
 
 	/* Never send a reset in response to a reset. */
 	if (th->rst)
@@ -634,7 +636,7 @@ static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 		 * Incoming packet is checked with md5 hash with finding key,
 		 * no RST generated if md5 hash doesn't match.
 		 */
-		sk1 = __inet_lookup_listener(net,
+		sk1 = __inet_lookup_listener(&ctx,
 					     &tcp_hashinfo, ip_hdr(skb)->saddr,
 					     th->source, ip_hdr(skb)->daddr,
 					     ntohs(th->source), inet_iif(skb));
@@ -683,7 +685,7 @@ static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 		arg.bound_dev_if = sk->sk_bound_dev_if;
 
 	arg.tos = ip_hdr(skb)->tos;
-	ip_send_unicast_reply(net, skb, &TCP_SKB_CB(skb)->header.h4.opt,
+	ip_send_unicast_reply(&ctx, skb, &TCP_SKB_CB(skb)->header.h4.opt,
 			      ip_hdr(skb)->saddr, ip_hdr(skb)->daddr,
 			      &arg, arg.iov[0].iov_len);
 
@@ -718,7 +720,7 @@ static void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
 			];
 	} rep;
 	struct ip_reply_arg arg;
-	struct net *net = dev_net(skb_dst(skb)->dev);
+	struct net_ctx dev_ctx = SKB_NET_CTX_DST(skb);
 
 	memset(&rep.th, 0, sizeof(struct tcphdr));
 	memset(&arg, 0, sizeof(arg));
@@ -767,11 +769,11 @@ static void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
 	if (oif)
 		arg.bound_dev_if = oif;
 	arg.tos = tos;
-	ip_send_unicast_reply(net, skb, &TCP_SKB_CB(skb)->header.h4.opt,
+	ip_send_unicast_reply(&dev_ctx, skb, &TCP_SKB_CB(skb)->header.h4.opt,
 			      ip_hdr(skb)->saddr, ip_hdr(skb)->daddr,
 			      &arg, arg.iov[0].iov_len);
 
-	TCP_INC_STATS_BH(net, TCP_MIB_OUTSEGS);
+	TCP_INC_STATS_BH(dev_ctx.net, TCP_MIB_OUTSEGS);
 }
 
 static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
@@ -1393,13 +1395,14 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 	const struct iphdr *iph = ip_hdr(skb);
 	struct sock *nsk;
 	struct request_sock **prev;
+	struct net_ctx ctx = { .net = sock_net(sk) };
 	/* Find possible connection requests. */
 	struct request_sock *req = inet_csk_search_req(sk, &prev, th->source,
 						       iph->saddr, iph->daddr);
 	if (req)
 		return tcp_check_req(sk, skb, req, prev, false);
 
-	nsk = inet_lookup_established(sock_net(sk), &tcp_hashinfo, iph->saddr,
+	nsk = inet_lookup_established(&ctx, &tcp_hashinfo, iph->saddr,
 			th->source, iph->daddr, th->dest, inet_iif(skb));
 
 	if (nsk) {
@@ -1495,6 +1498,7 @@ void tcp_v4_early_demux(struct sk_buff *skb)
 	const struct iphdr *iph;
 	const struct tcphdr *th;
 	struct sock *sk;
+	struct net_ctx dev_ctx = DEV_NET_CTX(skb->dev);
 
 	if (skb->pkt_type != PACKET_HOST)
 		return;
@@ -1508,7 +1512,7 @@ void tcp_v4_early_demux(struct sk_buff *skb)
 	if (th->doff < sizeof(struct tcphdr) / 4)
 		return;
 
-	sk = __inet_lookup_established(dev_net(skb->dev), &tcp_hashinfo,
+	sk = __inet_lookup_established(&dev_ctx, &tcp_hashinfo,
 				       iph->saddr, th->source,
 				       iph->daddr, ntohs(th->dest),
 				       skb->skb_iif);
@@ -1592,7 +1596,8 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	const struct tcphdr *th;
 	struct sock *sk;
 	int ret;
-	struct net *net = dev_net(skb->dev);
+	struct net_ctx dev_ctx = SKB_NET_CTX_DEV(skb);
+	struct net *net = dev_ctx.net;
 
 	if (skb->pkt_type != PACKET_HOST)
 		goto discard_it;
@@ -1726,7 +1731,7 @@ do_time_wait:
 	}
 	switch (tcp_timewait_state_process(inet_twsk(sk), skb, th)) {
 	case TCP_TW_SYN: {
-		struct sock *sk2 = inet_lookup_listener(dev_net(skb->dev),
+		struct sock *sk2 = inet_lookup_listener(&dev_ctx,
 							&tcp_hashinfo,
 							iph->saddr, th->source,
 							iph->daddr, th->dest,
@@ -1869,7 +1874,7 @@ static void *listening_get_next(struct seq_file *seq, void *cur)
 	struct sock *sk = cur;
 	struct inet_listen_hashbucket *ilb;
 	struct tcp_iter_state *st = seq->private;
-	struct net *net = seq_file_net(seq);
+	struct net_ctx *ctx = seq_file_net_ctx(seq);
 
 	if (!sk) {
 		ilb = &tcp_hashinfo.listening_hash[st->bucket];
@@ -1913,7 +1918,7 @@ get_req:
 	}
 get_sk:
 	sk_nulls_for_each_from(sk, node) {
-		if (!net_eq(sock_net(sk), net))
+		if (!sock_net_ctx_eq(sk, ctx))
 			continue;
 		if (sk->sk_family == st->family) {
 			cur = sk;
@@ -1972,7 +1977,7 @@ static inline bool empty_bucket(const struct tcp_iter_state *st)
 static void *established_get_first(struct seq_file *seq)
 {
 	struct tcp_iter_state *st = seq->private;
-	struct net *net = seq_file_net(seq);
+	struct net_ctx *ctx = seq_file_net_ctx(seq);
 	void *rc = NULL;
 
 	st->offset = 0;
@@ -1988,7 +1993,7 @@ static void *established_get_first(struct seq_file *seq)
 		spin_lock_bh(lock);
 		sk_nulls_for_each(sk, node, &tcp_hashinfo.ehash[st->bucket].chain) {
 			if (sk->sk_family != st->family ||
-			    !net_eq(sock_net(sk), net)) {
+			    !sock_net_ctx_eq(sk, ctx)) {
 				continue;
 			}
 			rc = sk;
@@ -2005,7 +2010,7 @@ static void *established_get_next(struct seq_file *seq, void *cur)
 	struct sock *sk = cur;
 	struct hlist_nulls_node *node;
 	struct tcp_iter_state *st = seq->private;
-	struct net *net = seq_file_net(seq);
+	struct net_ctx *ctx = seq_file_net_ctx(seq);
 
 	++st->num;
 	++st->offset;
@@ -2013,7 +2018,7 @@ static void *established_get_next(struct seq_file *seq, void *cur)
 	sk = sk_nulls_next(sk);
 
 	sk_nulls_for_each_from(sk, node) {
-		if (sk->sk_family == st->family && net_eq(sock_net(sk), net))
+		if (sk->sk_family == st->family && sock_net_ctx_eq(sk, ctx))
 			return sk;
 	}
 

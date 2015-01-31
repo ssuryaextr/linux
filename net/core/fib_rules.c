@@ -65,12 +65,12 @@ static void notify_rule_change(int event, struct fib_rule *rule,
 			       struct fib_rules_ops *ops, struct nlmsghdr *nlh,
 			       u32 pid);
 
-static struct fib_rules_ops *lookup_rules_ops(struct net *net, int family)
+static struct fib_rules_ops *lookup_rules_ops(struct net_ctx *ctx, int family)
 {
 	struct fib_rules_ops *ops;
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(ops, &net->rules_ops, list) {
+	list_for_each_entry_rcu(ops, &ctx->net->rules_ops, list) {
 		if (ops->family == family) {
 			if (!try_module_get(ops->owner))
 				ops = NULL;
@@ -126,7 +126,7 @@ errout:
 }
 
 struct fib_rules_ops *
-fib_rules_register(const struct fib_rules_ops *tmpl, struct net *net)
+fib_rules_register(const struct fib_rules_ops *tmpl, struct net_ctx *ctx)
 {
 	struct fib_rules_ops *ops;
 	int err;
@@ -136,7 +136,7 @@ fib_rules_register(const struct fib_rules_ops *tmpl, struct net *net)
 		return ERR_PTR(-ENOMEM);
 
 	INIT_LIST_HEAD(&ops->rules_list);
-	ops->fro_net = net;
+	ops->fro_net = ctx->net;
 
 	err = __fib_rules_register(ops);
 	if (err) {
@@ -274,7 +274,8 @@ errout:
 
 static int fib_nl_newrule(struct sk_buff *skb, struct nlmsghdr* nlh)
 {
-	struct net *net = sock_net(skb->sk);
+	struct net_ctx sk_ctx = SKB_NET_CTX_SOCK(skb);
+	struct net *net = sk_ctx.net;
 	struct fib_rule_hdr *frh = nlmsg_data(nlh);
 	struct fib_rules_ops *ops = NULL;
 	struct fib_rule *rule, *r, *last = NULL;
@@ -284,7 +285,7 @@ static int fib_nl_newrule(struct sk_buff *skb, struct nlmsghdr* nlh)
 	if (nlh->nlmsg_len < nlmsg_msg_size(sizeof(*frh)))
 		goto errout;
 
-	ops = lookup_rules_ops(net, frh->family);
+	ops = lookup_rules_ops(&sk_ctx, frh->family);
 	if (ops == NULL) {
 		err = -EAFNOSUPPORT;
 		goto errout;
@@ -432,7 +433,7 @@ errout:
 
 static int fib_nl_delrule(struct sk_buff *skb, struct nlmsghdr* nlh)
 {
-	struct net *net = sock_net(skb->sk);
+	struct net_ctx sk_ctx = SKB_NET_CTX_SOCK(skb);
 	struct fib_rule_hdr *frh = nlmsg_data(nlh);
 	struct fib_rules_ops *ops = NULL;
 	struct fib_rule *rule, *tmp;
@@ -442,7 +443,7 @@ static int fib_nl_delrule(struct sk_buff *skb, struct nlmsghdr* nlh)
 	if (nlh->nlmsg_len < nlmsg_msg_size(sizeof(*frh)))
 		goto errout;
 
-	ops = lookup_rules_ops(net, frh->family);
+	ops = lookup_rules_ops(&sk_ctx, frh->family);
 	if (ops == NULL) {
 		err = -EAFNOSUPPORT;
 		goto errout;
@@ -644,14 +645,14 @@ skip:
 
 static int fib_nl_dumprule(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	struct net *net = sock_net(skb->sk);
+	struct net_ctx sk_ctx = SKB_NET_CTX_SOCK(skb);
 	struct fib_rules_ops *ops;
 	int idx = 0, family;
 
 	family = rtnl_msg_family(cb->nlh);
 	if (family != AF_UNSPEC) {
 		/* Protocol specific dump request */
-		ops = lookup_rules_ops(net, family);
+		ops = lookup_rules_ops(&sk_ctx, family);
 		if (ops == NULL)
 			return -EAFNOSUPPORT;
 
@@ -659,7 +660,7 @@ static int fib_nl_dumprule(struct sk_buff *skb, struct netlink_callback *cb)
 	}
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(ops, &net->rules_ops, list) {
+	list_for_each_entry_rcu(ops, &sk_ctx.net->rules_ops, list) {
 		if (idx < cb->args[0] || !try_module_get(ops->owner))
 			goto skip;
 

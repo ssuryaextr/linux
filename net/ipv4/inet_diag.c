@@ -296,17 +296,18 @@ int inet_diag_dump_one_icsk(struct inet_hashinfo *hashinfo, struct sk_buff *in_s
 	int err;
 	struct sock *sk;
 	struct sk_buff *rep;
-	struct net *net = sock_net(in_skb->sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(in_skb->sk);
+	struct net *net = sk_ctx.net;
 
 	err = -EINVAL;
 	if (req->sdiag_family == AF_INET) {
-		sk = inet_lookup(net, hashinfo, req->id.idiag_dst[0],
+		sk = inet_lookup(&sk_ctx, hashinfo, req->id.idiag_dst[0],
 				 req->id.idiag_dport, req->id.idiag_src[0],
 				 req->id.idiag_sport, req->id.idiag_if);
 	}
 #if IS_ENABLED(CONFIG_IPV6)
 	else if (req->sdiag_family == AF_INET6) {
-		sk = inet6_lookup(net, hashinfo,
+		sk = inet6_lookup(&sk_ctx, hashinfo,
 				  (struct in6_addr *)req->id.idiag_dst,
 				  req->id.idiag_dport,
 				  (struct in6_addr *)req->id.idiag_src,
@@ -842,7 +843,7 @@ void inet_diag_dump_icsk(struct inet_hashinfo *hashinfo, struct sk_buff *skb,
 {
 	int i, num;
 	int s_i, s_num;
-	struct net *net = sock_net(skb->sk);
+	struct net_ctx ctx = SOCK_NET_CTX(skb->sk);
 
 	s_i = cb->args[1];
 	s_num = num = cb->args[2];
@@ -862,7 +863,7 @@ void inet_diag_dump_icsk(struct inet_hashinfo *hashinfo, struct sk_buff *skb,
 			sk_nulls_for_each(sk, node, &ilb->head) {
 				struct inet_sock *inet = inet_sk(sk);
 
-				if (!net_eq(sock_net(sk), net))
+				if (!sock_net_ctx_eq(sk, &ctx))
 					continue;
 
 				if (num < s_num) {
@@ -935,7 +936,7 @@ skip_listen_ht:
 			int res;
 			int state;
 
-			if (!net_eq(sock_net(sk), net))
+			if (!sock_net_ctx_eq(sk, &ctx))
 				continue;
 			if (num < s_num)
 				goto next_normal;

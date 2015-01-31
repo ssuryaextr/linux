@@ -368,9 +368,9 @@ static inline void unregister_net_sysctl_table(struct ctl_table_header *header)
 }
 #endif
 
-static inline int rt_genid_ipv4(struct net *net)
+static inline int rt_genid_ipv4(struct net_ctx *ctx)
 {
-	return atomic_read(&net->ipv4.rt_genid);
+	return atomic_read(&ctx->net->ipv4.rt_genid);
 }
 
 static inline void rt_genid_bump_ipv4(struct net *net)
@@ -400,9 +400,9 @@ static inline void rt_genid_bump_all(struct net *net)
 	rt_genid_bump_ipv6(net);
 }
 
-static inline int fnhe_genid(struct net *net)
+static inline int fnhe_genid(struct net_ctx *ctx)
 {
-	return atomic_read(&net->fnhe_genid);
+	return atomic_read(&ctx->net->fnhe_genid);
 }
 
 static inline void fnhe_genid_bump(struct net *net)

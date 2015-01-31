@@ -246,7 +246,7 @@ void neigh_table_init(int index, struct neigh_table *tbl);
 int neigh_table_clear(int index, struct neigh_table *tbl);
 struct neighbour *neigh_lookup(struct neigh_table *tbl, const void *pkey,
 			       struct net_device *dev);
-struct neighbour *neigh_lookup_nodev(struct neigh_table *tbl, struct net *net,
+struct neighbour *neigh_lookup_nodev(struct neigh_table *tbl, struct net_ctx *ctx,
 				     const void *pkey);
 struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
 				 struct net_device *dev, bool want_ref);
@@ -297,12 +297,12 @@ unsigned long neigh_rand_reach_time(unsigned long base);
 
 void pneigh_enqueue(struct neigh_table *tbl, struct neigh_parms *p,
 		    struct sk_buff *skb);
-struct pneigh_entry *pneigh_lookup(struct neigh_table *tbl, struct net *net,
+struct pneigh_entry *pneigh_lookup(struct neigh_table *tbl, struct net_ctx *ctx,
 				   const void *key, struct net_device *dev,
 				   int creat);
-struct pneigh_entry *__pneigh_lookup(struct neigh_table *tbl, struct net *net,
+struct pneigh_entry *__pneigh_lookup(struct neigh_table *tbl, struct net_ctx *ctx,
 				     const void *key, struct net_device *dev);
-int pneigh_delete(struct neigh_table *tbl, struct net *net, const void *key,
+int pneigh_delete(struct neigh_table *tbl, struct net_ctx *ctx, const void *key,
 		  struct net_device *dev);
 
 static inline struct net *pneigh_net(const struct pneigh_entry *pneigh)

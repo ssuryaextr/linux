@@ -383,6 +383,7 @@ int ip_queue_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl)
 	rt = (struct rtable *)__sk_dst_check(sk, 0);
 	if (rt == NULL) {
 		__be32 daddr;
+		struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 		/* Use correct destination address if we have options. */
 		daddr = inet->inet_daddr;
@@ -393,7 +394,7 @@ int ip_queue_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl)
 		 * keep trying until route appears or the connection times
 		 * itself out.
 		 */
-		rt = ip_route_output_ports(sock_net(sk), fl4, sk,
+		rt = ip_route_output_ports(&sk_ctx, fl4, sk,
 					   daddr, inet->inet_saddr,
 					   inet->inet_dport,
 					   inet->inet_sport,
@@ -1522,7 +1523,7 @@ static DEFINE_PER_CPU(struct inet_sock, unicast_sock) = {
 	.uc_ttl		= -1,
 };
 
-void ip_send_unicast_reply(struct net *net, struct sk_buff *skb,
+void ip_send_unicast_reply(struct net_ctx *ctx, struct sk_buff *skb,
 			   const struct ip_options *sopt,
 			   __be32 daddr, __be32 saddr,
 			   const struct ip_reply_arg *arg,
@@ -1554,14 +1555,14 @@ void ip_send_unicast_reply(struct net *net, struct sk_buff *skb,
 	}
 
 	flowi4_init_output(&fl4, arg->bound_dev_if,
-			   IP4_REPLY_MARK(net, skb->mark),
+			   IP4_REPLY_MARK(ctx->net, skb->mark),
 			   RT_TOS(arg->tos),
 			   RT_SCOPE_UNIVERSE, ip_hdr(skb)->protocol,
 			   ip_reply_arg_flowi_flags(arg),
 			   daddr, saddr,
 			   tcp_hdr(skb)->source, tcp_hdr(skb)->dest);
 	security_skb_classify_flow(skb, flowi4_to_flowi(&fl4));
-	rt = ip_route_output_key(net, &fl4);
+	rt = ip_route_output_key(ctx, &fl4);
 	if (IS_ERR(rt))
 		return;
 
@@ -1572,7 +1573,7 @@ void ip_send_unicast_reply(struct net *net, struct sk_buff *skb,
 	sk->sk_priority = skb->priority;
 	sk->sk_protocol = ip_hdr(skb)->protocol;
 	sk->sk_bound_dev_if = arg->bound_dev_if;
-	sock_net_set(sk, net);
+	sock_net_set(sk, ctx->net);
 	__skb_queue_head_init(&sk->sk_write_queue);
 	sk->sk_sndbuf = sysctl_wmem_default;
 	err = ip_append_data(sk, &fl4, ip_reply_glue_bits, arg->iov->iov_base,

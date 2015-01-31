@@ -389,6 +389,7 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 	struct ipcm_cookie ipc;
 	struct rtable *rt = skb_rtable(skb);
 	struct net *net = dev_net(rt->dst.dev);
+	struct net_ctx dev_ctx = { .net = net };
 	struct flowi4 fl4;
 	struct sock *sk;
 	struct inet_sock *inet;
@@ -426,7 +427,7 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 	fl4.flowi4_tos = RT_TOS(ip_hdr(skb)->tos);
 	fl4.flowi4_proto = IPPROTO_ICMP;
 	security_skb_classify_flow(skb, flowi4_to_flowi(&fl4));
-	rt = ip_route_output_key(net, &fl4);
+	rt = ip_route_output_key(&dev_ctx, &fl4);
 	if (IS_ERR(rt))
 		goto out_unlock;
 	if (icmpv4_xrlim_allow(net, rt, &fl4, icmp_param->data.icmph.type,
@@ -437,7 +438,7 @@ out_unlock:
 	icmp_xmit_unlock(sk);
 }
 
-static struct rtable *icmp_route_lookup(struct net *net,
+static struct rtable *icmp_route_lookup(struct net_ctx *ctx,
 					struct flowi4 *fl4,
 					struct sk_buff *skb_in,
 					const struct iphdr *iph,
@@ -459,14 +460,14 @@ static struct rtable *icmp_route_lookup(struct net *net,
 	fl4->fl4_icmp_type = type;
 	fl4->fl4_icmp_code = code;
 	security_skb_classify_flow(skb_in, flowi4_to_flowi(fl4));
-	rt = __ip_route_output_key(net, fl4);
+	rt = __ip_route_output_key(ctx, fl4);
 	if (IS_ERR(rt))
 		return rt;
 
 	/* No need to clone since we're just using its address. */
 	rt2 = rt;
 
-	rt = (struct rtable *) xfrm_lookup(net, &rt->dst,
+	rt = (struct rtable *) xfrm_lookup(ctx, &rt->dst,
 					   flowi4_to_flowi(fl4), NULL, 0);
 	if (!IS_ERR(rt)) {
 		if (rt != rt2)
@@ -480,8 +481,8 @@ static struct rtable *icmp_route_lookup(struct net *net,
 	if (err)
 		goto relookup_failed;
 
-	if (inet_addr_type(net, fl4_dec.saddr) == RTN_LOCAL) {
-		rt2 = __ip_route_output_key(net, &fl4_dec);
+	if (inet_addr_type(ctx, fl4_dec.saddr) == RTN_LOCAL) {
+		rt2 = __ip_route_output_key(ctx, &fl4_dec);
 		if (IS_ERR(rt2))
 			err = PTR_ERR(rt2);
 	} else {
@@ -489,7 +490,7 @@ static struct rtable *icmp_route_lookup(struct net *net,
 		unsigned long orefdst;
 
 		fl4_2.daddr = fl4_dec.saddr;
-		rt2 = ip_route_output_key(net, &fl4_2);
+		rt2 = ip_route_output_key(ctx, &fl4_2);
 		if (IS_ERR(rt2)) {
 			err = PTR_ERR(rt2);
 			goto relookup_failed;
@@ -507,7 +508,7 @@ static struct rtable *icmp_route_lookup(struct net *net,
 	if (err)
 		goto relookup_failed;
 
-	rt2 = (struct rtable *) xfrm_lookup(net, &rt2->dst,
+	rt2 = (struct rtable *) xfrm_lookup(ctx, &rt2->dst,
 					    flowi4_to_flowi(&fl4_dec), NULL,
 					    XFRM_LOOKUP_ICMP);
 	if (!IS_ERR(rt2)) {
@@ -552,12 +553,14 @@ void icmp_send(struct sk_buff *skb_in, int type, int code, __be32 info)
 	__be32 saddr;
 	u8  tos;
 	u32 mark;
+	struct net_ctx dev_ctx;
 	struct net *net;
 	struct sock *sk;
 
 	if (!rt)
 		goto out;
 	net = dev_net(rt->dst.dev);
+	dev_ctx.net = net;
 
 	/*
 	 *	Find the original header. It is expected to be valid, of course.
@@ -641,7 +644,7 @@ void icmp_send(struct sk_buff *skb_in, int type, int code, __be32 info)
 		rcu_read_lock();
 		if (rt_is_input_route(rt) &&
 		    net->ipv4.sysctl_icmp_errors_use_inbound_ifaddr)
-			dev = dev_get_by_index_rcu(net, inet_iif(skb_in));
+			dev = dev_get_by_index_rcu_ctx(&dev_ctx, inet_iif(skb_in));
 
 		if (dev)
 			saddr = inet_select_addr(dev, 0, RT_SCOPE_LINK);
@@ -677,7 +680,7 @@ void icmp_send(struct sk_buff *skb_in, int type, int code, __be32 info)
 	ipc.ttl = 0;
 	ipc.tos = -1;
 
-	rt = icmp_route_lookup(net, &fl4, skb_in, iph, saddr, tos, mark,
+	rt = icmp_route_lookup(&dev_ctx, &fl4, skb_in, iph, saddr, tos, mark,
 			       type, code, icmp_param);
 	if (IS_ERR(rt))
 		goto out_unlock;
@@ -750,10 +753,9 @@ static bool icmp_unreach(struct sk_buff *skb)
 {
 	const struct iphdr *iph;
 	struct icmphdr *icmph;
-	struct net *net;
+	struct net_ctx dev_ctx = SKB_NET_CTX_DST(skb);
+	struct net *net = dev_ctx.net;
 	u32 info = 0;
-
-	net = dev_net(skb_dst(skb)->dev);
 
 	/*
 	 *	Incomplete header ?
@@ -828,7 +830,7 @@ static bool icmp_unreach(struct sk_buff *skb)
 	 */
 
 	if (!net->ipv4.sysctl_icmp_ignore_bogus_error_responses &&
-	    inet_addr_type(net, iph->daddr) == RTN_BROADCAST) {
+	    inet_addr_type(&dev_ctx, iph->daddr) == RTN_BROADCAST) {
 		net_warn_ratelimited("%pI4 sent an invalid ICMP type %u, code %u error to a broadcast: %pI4 on %s\n",
 				     &ip_hdr(skb)->saddr,
 				     icmph->type, icmph->code,
@@ -1044,7 +1046,7 @@ void icmp_err(struct sk_buff *skb, u32 info)
 	struct icmphdr *icmph = (struct icmphdr *)(skb->data + offset);
 	int type = icmp_hdr(skb)->type;
 	int code = icmp_hdr(skb)->code;
-	struct net *net = dev_net(skb->dev);
+	struct net_ctx dev_ctx = SKB_NET_CTX_DEV(skb);
 
 	/*
 	 * Use ping_err to handle all icmp errors except those
@@ -1056,9 +1058,9 @@ void icmp_err(struct sk_buff *skb, u32 info)
 	}
 
 	if (type == ICMP_DEST_UNREACH && code == ICMP_FRAG_NEEDED)
-		ipv4_update_pmtu(skb, net, info, 0, 0, IPPROTO_ICMP, 0);
+		ipv4_update_pmtu(skb, &dev_ctx, info, 0, 0, IPPROTO_ICMP, 0);
 	else if (type == ICMP_REDIRECT)
-		ipv4_redirect(skb, net, 0, 0, IPPROTO_ICMP, 0);
+		ipv4_redirect(skb, &dev_ctx, 0, 0, IPPROTO_ICMP, 0);
 }
 
 /*

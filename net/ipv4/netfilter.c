@@ -19,7 +19,7 @@
 /* route_me_harder function, used by iptable_nat, iptable_mangle + ip_queue */
 int ip_route_me_harder(struct sk_buff *skb, unsigned int addr_type)
 {
-	struct net *net = dev_net(skb_dst(skb)->dev);
+	struct net_ctx ctx = SKB_NET_CTX_DST(skb);
 	const struct iphdr *iph = ip_hdr(skb);
 	struct rtable *rt;
 	struct flowi4 fl4 = {};
@@ -28,7 +28,7 @@ int ip_route_me_harder(struct sk_buff *skb, unsigned int addr_type)
 	unsigned int hh_len;
 
 	if (addr_type == RTN_UNSPEC)
-		addr_type = inet_addr_type(net, saddr);
+		addr_type = inet_addr_type(&ctx, saddr);
 	if (addr_type == RTN_LOCAL || addr_type == RTN_UNICAST)
 		flags |= FLOWI_FLAG_ANYSRC;
 	else
@@ -43,7 +43,7 @@ int ip_route_me_harder(struct sk_buff *skb, unsigned int addr_type)
 	fl4.flowi4_oif = skb->sk ? skb->sk->sk_bound_dev_if : 0;
 	fl4.flowi4_mark = skb->mark;
 	fl4.flowi4_flags = flags;
-	rt = ip_route_output_key(net, &fl4);
+	rt = ip_route_output_key(&ctx, &fl4);
 	if (IS_ERR(rt))
 		return PTR_ERR(rt);
 
@@ -59,7 +59,7 @@ int ip_route_me_harder(struct sk_buff *skb, unsigned int addr_type)
 	    xfrm_decode_session(skb, flowi4_to_flowi(&fl4), AF_INET) == 0) {
 		struct dst_entry *dst = skb_dst(skb);
 		skb_dst_set(skb, NULL);
-		dst = xfrm_lookup(net, dst, flowi4_to_flowi(&fl4), skb->sk, 0);
+		dst = xfrm_lookup(&ctx, dst, flowi4_to_flowi(&fl4), skb->sk, 0);
 		if (IS_ERR(dst))
 			return PTR_ERR(dst);
 		skb_dst_set(skb, dst);
@@ -173,10 +173,10 @@ static __sum16 nf_ip_checksum_partial(struct sk_buff *skb, unsigned int hook,
 	return csum;
 }
 
-static int nf_ip_route(struct net *net, struct dst_entry **dst,
+static int nf_ip_route(struct net_ctx *ctx, struct dst_entry **dst,
 		       struct flowi *fl, bool strict __always_unused)
 {
-	struct rtable *rt = ip_route_output_key(net, &fl->u.ip4);
+	struct rtable *rt = ip_route_output_key(ctx, &fl->u.ip4);
 	if (IS_ERR(rt))
 		return PTR_ERR(rt);
 	*dst = &rt->dst;

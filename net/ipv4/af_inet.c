@@ -423,7 +423,8 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	struct sockaddr_in *addr = (struct sockaddr_in *)uaddr;
 	struct sock *sk = sock->sk;
 	struct inet_sock *inet = inet_sk(sk);
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
+	struct net *net = sk_ctx.net;
 	unsigned short snum;
 	int chk_addr_ret;
 	int err;
@@ -447,7 +448,7 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 			goto out;
 	}
 
-	chk_addr_ret = inet_addr_type(net, addr->sin_addr.s_addr);
+	chk_addr_ret = inet_addr_type(&sk_ctx, addr->sin_addr.s_addr);
 
 	/* Not specified by any standard per-se, however it breaks too
 	 * many applications when removed.  It is unfortunate since
@@ -838,7 +839,7 @@ int inet_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 {
 	struct sock *sk = sock->sk;
 	int err = 0;
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	switch (cmd) {
 	case SIOCGSTAMP:
@@ -850,12 +851,12 @@ int inet_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 	case SIOCADDRT:
 	case SIOCDELRT:
 	case SIOCRTMSG:
-		err = ip_rt_ioctl(net, cmd, (void __user *)arg);
+		err = ip_rt_ioctl(&sk_ctx, cmd, (void __user *)arg);
 		break;
 	case SIOCDARP:
 	case SIOCGARP:
 	case SIOCSARP:
-		err = arp_ioctl(net, cmd, (void __user *)arg);
+		err = arp_ioctl(&sk_ctx, cmd, (void __user *)arg);
 		break;
 	case SIOCGIFADDR:
 	case SIOCSIFADDR:
@@ -868,7 +869,7 @@ int inet_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 	case SIOCSIFPFLAGS:
 	case SIOCGIFPFLAGS:
 	case SIOCSIFFLAGS:
-		err = devinet_ioctl(net, cmd, (void __user *)arg);
+		err = devinet_ioctl(&sk_ctx, cmd, (void __user *)arg);
 		break;
 	default:
 		if (sk->sk_prot->ioctl)
@@ -1157,6 +1158,7 @@ int inet_sk_rebuild_header(struct sock *sk)
 	struct ip_options_rcu *inet_opt;
 	struct flowi4 *fl4;
 	int err;
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	/* Route is OK, nothing to do. */
 	if (rt)
@@ -1170,7 +1172,7 @@ int inet_sk_rebuild_header(struct sock *sk)
 		daddr = inet_opt->opt.faddr;
 	rcu_read_unlock();
 	fl4 = &inet->cork.fl.u.ip4;
-	rt = ip_route_output_ports(sock_net(sk), fl4, sk, daddr, inet->inet_saddr,
+	rt = ip_route_output_ports(&sk_ctx, fl4, sk, daddr, inet->inet_saddr,
 				   inet->inet_dport, inet->inet_sport,
 				   sk->sk_protocol, RT_CONN_FLAGS(sk),
 				   sk->sk_bound_dev_if);

@@ -156,6 +156,7 @@ bool ip_call_ra_chain(struct sk_buff *skb)
 	u8 protocol = ip_hdr(skb)->protocol;
 	struct sock *last = NULL;
 	struct net_device *dev = skb->dev;
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 
 	for (ra = rcu_dereference(ip_ra_chain); ra; ra = rcu_dereference(ra->next)) {
 		struct sock *sk = ra->sk;
@@ -166,7 +167,7 @@ bool ip_call_ra_chain(struct sk_buff *skb)
 		if (sk && inet_sk(sk)->inet_num == protocol &&
 		    (!sk->sk_bound_dev_if ||
 		     sk->sk_bound_dev_if == dev->ifindex) &&
-		    net_eq(sock_net(sk), dev_net(dev))) {
+		    sock_net_ctx_eq(sk, &dev_ctx)) {
 			if (ip_is_fragment(ip_hdr(skb))) {
 				if (ip_defrag(skb, IP_DEFRAG_CALL_RA_CHAIN))
 					return true;
@@ -262,6 +263,7 @@ static inline bool ip_rcv_options(struct sk_buff *skb)
 	struct ip_options *opt;
 	const struct iphdr *iph;
 	struct net_device *dev = skb->dev;
+	struct net_ctx dev_ctx = DEV_NET_CTX(dev);
 
 	/* It looks as overkill, because not all
 	   IP options require packet mangling.
@@ -279,7 +281,7 @@ static inline bool ip_rcv_options(struct sk_buff *skb)
 	opt = &(IPCB(skb)->opt);
 	opt->optlen = iph->ihl*4 - sizeof(struct iphdr);
 
-	if (ip_options_compile(dev_net(dev), opt, skb)) {
+	if (ip_options_compile(&dev_ctx, opt, skb)) {
 		IP_INC_STATS_BH(dev_net(dev), IPSTATS_MIB_INHDRERRORS);
 		goto drop;
 	}

@@ -2184,7 +2184,7 @@ static struct dst_entry *make_blackhole(struct net *net, u16 family,
  * At the moment we eat a raw IP route. Mostly to speed up lookups
  * on interfaces with disabled IPsec.
  */
-struct dst_entry *xfrm_lookup(struct net *net, struct dst_entry *dst_orig,
+struct dst_entry *xfrm_lookup(struct net_ctx *ctx, struct dst_entry *dst_orig,
 			      const struct flowi *fl,
 			      struct sock *sk, int flags)
 {
@@ -2244,7 +2244,7 @@ struct dst_entry *xfrm_lookup(struct net *net, struct dst_entry *dst_orig,
 		    !net->xfrm.policy_count[XFRM_POLICY_OUT])
 			goto nopol;
 
-		flo = flow_cache_lookup(net, fl, family, dir,
+		flo = flow_cache_lookup(ctx, fl, family, dir,
 					xfrm_bundle_lookup, &xflo);
 		if (flo == NULL)
 			goto nopol;
@@ -2443,7 +2443,8 @@ static inline int secpath_has_nontransport(const struct sec_path *sp, int k, int
 int __xfrm_policy_check(struct sock *sk, int dir, struct sk_buff *skb,
 			unsigned short family)
 {
-	struct net *net = dev_net(skb->dev);
+	struct net_ctx dev_ctx = SKB_NET_CTX_DEV(skb);
+	struct net *net = dev_ctx.net;
 	struct xfrm_policy *pol;
 	struct xfrm_policy *pols[XFRM_POLICY_TYPE_MAX];
 	int npols = 0;
@@ -2490,7 +2491,7 @@ int __xfrm_policy_check(struct sock *sk, int dir, struct sk_buff *skb,
 	if (!pol) {
 		struct flow_cache_object *flo;
 
-		flo = flow_cache_lookup(net, &fl, family, fl_dir,
+		flo = flow_cache_lookup(&dev_ctx, &fl, family, fl_dir,
 					xfrm_policy_lookup, NULL);
 		if (IS_ERR_OR_NULL(flo))
 			pol = ERR_CAST(flo);

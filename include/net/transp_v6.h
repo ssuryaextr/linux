@@ -40,7 +40,7 @@ void ip6_datagram_recv_common_ctl(struct sock *sk, struct msghdr *msg,
 void ip6_datagram_recv_specific_ctl(struct sock *sk, struct msghdr *msg,
 				    struct sk_buff *skb);
 
-int ip6_datagram_send_ctl(struct net *net, struct sock *sk, struct msghdr *msg,
+int ip6_datagram_send_ctl(struct net_ctx *ctx, struct sock *sk, struct msghdr *msg,
 			  struct flowi6 *fl6, struct ipv6_txoptions *opt,
 			  int *hlimit, int *tclass, int *dontfrag);
 

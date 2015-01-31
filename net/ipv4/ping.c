@@ -167,9 +167,9 @@ void ping_unhash(struct sock *sk)
 }
 EXPORT_SYMBOL_GPL(ping_unhash);
 
-static struct sock *ping_lookup(struct net *net, struct sk_buff *skb, u16 ident)
+static struct sock *ping_lookup(struct net_ctx *ctx, struct sk_buff *skb, u16 ident)
 {
-	struct hlist_nulls_head *hslot = ping_hashslot(&ping_table, net, ident);
+	struct hlist_nulls_head *hslot = ping_hashslot(&ping_table, ctx->net, ident);
 	struct sock *sk = NULL;
 	struct inet_sock *isk;
 	struct hlist_nulls_node *hnode;
@@ -297,7 +297,7 @@ EXPORT_SYMBOL_GPL(ping_close);
 /* Checks the bind address and possibly modifies sk->sk_bound_dev_if. */
 static int ping_check_bind_addr(struct sock *sk, struct inet_sock *isk,
 				struct sockaddr *uaddr, int addr_len) {
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 	if (sk->sk_family == AF_INET) {
 		struct sockaddr_in *addr = (struct sockaddr_in *) uaddr;
 		int chk_addr_ret;
@@ -308,12 +308,12 @@ static int ping_check_bind_addr(struct sock *sk, struct inet_sock *isk,
 		pr_debug("ping_check_bind_addr(sk=%p,addr=%pI4,port=%d)\n",
 			 sk, &addr->sin_addr.s_addr, ntohs(addr->sin_port));
 
-		chk_addr_ret = inet_addr_type(net, addr->sin_addr.s_addr);
+		chk_addr_ret = inet_addr_type(&sk_ctx, addr->sin_addr.s_addr);
 
 		if (addr->sin_addr.s_addr == htonl(INADDR_ANY))
 			chk_addr_ret = RTN_LOCAL;
 
-		if ((net->ipv4.sysctl_ip_nonlocal_bind == 0 &&
+		if ((sk_ctx.net->ipv4.sysctl_ip_nonlocal_bind == 0 &&
 		    isk->freebind == 0 && isk->transparent == 0 &&
 		     chk_addr_ret != RTN_LOCAL) ||
 		    chk_addr_ret == RTN_MULTICAST ||
@@ -344,13 +344,13 @@ static int ping_check_bind_addr(struct sock *sk, struct inet_sock *isk,
 
 		rcu_read_lock();
 		if (addr->sin6_scope_id) {
-			dev = dev_get_by_index_rcu(net, addr->sin6_scope_id);
+			dev = dev_get_by_index_rcu_ctx(&sk_ctx, addr->sin6_scope_id);
 			if (!dev) {
 				rcu_read_unlock();
 				return -ENODEV;
 			}
 		}
-		has_addr = pingv6_ops.ipv6_chk_addr(net, &addr->sin6_addr, dev,
+		has_addr = pingv6_ops.ipv6_chk_addr(&sk_ctx, &addr->sin6_addr, dev,
 						    scoped);
 		rcu_read_unlock();
 
@@ -479,7 +479,7 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 	struct inet_sock *inet_sock;
 	int type;
 	int code;
-	struct net *net = dev_net(skb->dev);
+	struct net_ctx dev_ctx = SKB_NET_CTX_DEV(skb);
 	struct sock *sk;
 	int harderr;
 	int err;
@@ -507,7 +507,7 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 		 skb->protocol, type, code, ntohs(icmph->un.echo.id),
 		 ntohs(icmph->un.echo.sequence));
 
-	sk = ping_lookup(net, skb, ntohs(icmph->un.echo.id));
+	sk = ping_lookup(&dev_ctx, skb, ntohs(icmph->un.echo.id));
 	if (sk == NULL) {
 		pr_debug("no socket, dropping\n");
 		return;	/* No socket for error */
@@ -687,7 +687,8 @@ EXPORT_SYMBOL_GPL(ping_common_sendmsg);
 static int ping_v4_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			   size_t len)
 {
-	struct net *net = sock_net(sk);
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
+	struct net *net = sk_ctx.net;
 	struct flowi4 fl4;
 	struct inet_sock *inet = inet_sk(sk);
 	struct ipcm_cookie ipc;
@@ -736,7 +737,7 @@ static int ping_v4_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *m
 	sock_tx_timestamp(sk, &ipc.tx_flags);
 
 	if (msg->msg_controllen) {
-		err = ip_cmsg_send(sock_net(sk), msg, &ipc, false);
+		err = ip_cmsg_send(&sk_ctx, msg, &ipc, false);
 		if (err)
 			return err;
 		if (ipc.opt)
@@ -783,7 +784,7 @@ static int ping_v4_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *m
 			   inet_sk_flowi_flags(sk), faddr, saddr, 0, 0);
 
 	security_sk_classify_flow(sk, flowi4_to_flowi(&fl4));
-	rt = ip_route_output_flow(net, &fl4, sk);
+	rt = ip_route_output_flow(&sk_ctx, &fl4, sk);
 	if (IS_ERR(rt)) {
 		err = PTR_ERR(rt);
 		rt = NULL;
@@ -829,7 +830,7 @@ out:
 	if (free)
 		kfree(ipc.opt);
 	if (!err) {
-		icmp_out_count(sock_net(sk), user_icmph.type);
+		icmp_out_count(net, user_icmph.type);
 		return len;
 	}
 	return err;
@@ -953,7 +954,7 @@ EXPORT_SYMBOL_GPL(ping_queue_rcv_skb);
 bool ping_rcv(struct sk_buff *skb)
 {
 	struct sock *sk;
-	struct net *net = dev_net(skb->dev);
+	struct net_ctx dev_ctx = SKB_NET_CTX_DEV(skb);
 	struct icmphdr *icmph = icmp_hdr(skb);
 
 	/* We assume the packet has already been checked by icmp_rcv */
@@ -964,7 +965,7 @@ bool ping_rcv(struct sk_buff *skb)
 	/* Push ICMP header back */
 	skb_push(skb, skb->data - (u8 *)icmph);
 
-	sk = ping_lookup(net, skb, ntohs(icmph->un.echo.id));
+	sk = ping_lookup(&dev_ctx, skb, ntohs(icmph->un.echo.id));
 	if (sk != NULL) {
 		struct sk_buff *skb2 = skb_clone(skb, GFP_ATOMIC);
 
@@ -1007,7 +1008,7 @@ static struct sock *ping_get_first(struct seq_file *seq, int start)
 {
 	struct sock *sk;
 	struct ping_iter_state *state = seq->private;
-	struct net *net = seq_file_net(seq);
+	struct net_ctx *ctx = seq_file_net_ctx(seq);
 
 	for (state->bucket = start; state->bucket < PING_HTABLE_SIZE;
 	     ++state->bucket) {
@@ -1020,7 +1021,7 @@ static struct sock *ping_get_first(struct seq_file *seq, int start)
 			continue;
 
 		sk_nulls_for_each(sk, node, hslot) {
-			if (net_eq(sock_net(sk), net) &&
+			if (sock_net_ctx_eq(sk, ctx) &&
 			    sk->sk_family == state->family)
 				goto found;
 		}
@@ -1033,11 +1034,11 @@ found:
 static struct sock *ping_get_next(struct seq_file *seq, struct sock *sk)
 {
 	struct ping_iter_state *state = seq->private;
-	struct net *net = seq_file_net(seq);
+	struct net_ctx *ctx = seq_file_net_ctx(seq);
 
 	do {
 		sk = sk_nulls_next(sk);
-	} while (sk && (!net_eq(sock_net(sk), net)));
+	} while (sk && !sock_net_ctx_eq(sk, ctx));
 
 	if (!sk)
 		return ping_get_first(seq, state->bucket + 1);

@@ -47,7 +47,7 @@ struct fib4_rule {
 #endif
 };
 
-int __fib_lookup(struct net *net, struct flowi4 *flp, struct fib_result *res)
+int __fib_lookup(struct net_ctx *ctx, struct flowi4 *flp, struct fib_result *res)
 {
 	struct fib_lookup_arg arg = {
 		.result = res,
@@ -55,7 +55,8 @@ int __fib_lookup(struct net *net, struct flowi4 *flp, struct fib_result *res)
 	};
 	int err;
 
-	err = fib_rules_lookup(net->ipv4.rules_ops, flowi4_to_flowi(flp), 0, &arg);
+	err = fib_rules_lookup(ctx->net->ipv4.rules_ops, flowi4_to_flowi(flp),
+			       0, &arg);
 #ifdef CONFIG_IP_ROUTE_CLASSID
 	if (arg.rule)
 		res->tclassid = ((struct fib4_rule *)arg.rule)->tclassid;
@@ -288,7 +289,7 @@ static size_t fib4_rule_nlmsg_payload(struct fib_rule *rule)
 
 static void fib4_rule_flush_cache(struct fib_rules_ops *ops)
 {
-	rt_cache_flush(ops->fro_net);
+	rt_cache_flush(ops->fro_net_ctx.net);
 }
 
 static const struct fib_rules_ops __net_initconst fib4_rules_ops_template = {
@@ -330,8 +331,9 @@ int __net_init fib4_rules_init(struct net *net)
 {
 	int err;
 	struct fib_rules_ops *ops;
+	struct net_ctx ctx = { .net = net };
 
-	ops = fib_rules_register(&fib4_rules_ops_template, net);
+	ops = fib_rules_register(&fib4_rules_ops_template, &ctx);
 	if (IS_ERR(ops))
 		return PTR_ERR(ops);
 

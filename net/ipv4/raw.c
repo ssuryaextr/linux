@@ -119,13 +119,13 @@ void raw_unhash_sk(struct sock *sk)
 }
 EXPORT_SYMBOL_GPL(raw_unhash_sk);
 
-static struct sock *__raw_v4_lookup(struct net *net, struct sock *sk,
+static struct sock *__raw_v4_lookup(struct net_ctx *ctx, struct sock *sk,
 		unsigned short num, __be32 raddr, __be32 laddr, int dif)
 {
 	sk_for_each_from(sk) {
 		struct inet_sock *inet = inet_sk(sk);
 
-		if (net_eq(sock_net(sk), net) && inet->inet_num == num	&&
+		if (sock_net_ctx_eq(sk, ctx) && inet->inet_num == num &&
 		    !(inet->inet_daddr && inet->inet_daddr != raddr) 	&&
 		    !(inet->inet_rcv_saddr && inet->inet_rcv_saddr != laddr) &&
 		    !(sk->sk_bound_dev_if && sk->sk_bound_dev_if != dif))
@@ -171,15 +171,14 @@ static int raw_v4_input(struct sk_buff *skb, const struct iphdr *iph, int hash)
 	struct sock *sk;
 	struct hlist_head *head;
 	int delivered = 0;
-	struct net *net;
+	struct net_ctx ctx = SKB_NET_CTX_DEV(skb);
 
 	read_lock(&raw_v4_hashinfo.lock);
 	head = &raw_v4_hashinfo.ht[hash];
 	if (hlist_empty(head))
 		goto out;
 
-	net = dev_net(skb->dev);
-	sk = __raw_v4_lookup(net, __sk_head(head), iph->protocol,
+	sk = __raw_v4_lookup(&ctx, __sk_head(head), iph->protocol,
 			     iph->saddr, iph->daddr,
 			     skb->dev->ifindex);
 
@@ -194,7 +193,7 @@ static int raw_v4_input(struct sk_buff *skb, const struct iphdr *iph, int hash)
 			if (clone)
 				raw_rcv(sk, clone);
 		}
-		sk = __raw_v4_lookup(net, sk_next(sk), iph->protocol,
+		sk = __raw_v4_lookup(&ctx, sk_next(sk), iph->protocol,
 				     iph->saddr, iph->daddr,
 				     skb->dev->ifindex);
 	}
@@ -287,7 +286,7 @@ void raw_icmp_error(struct sk_buff *skb, int protocol, u32 info)
 	int hash;
 	struct sock *raw_sk;
 	const struct iphdr *iph;
-	struct net *net;
+	struct net_ctx ctx = SKB_NET_CTX_DEV(skb);
 
 	hash = protocol & (RAW_HTABLE_SIZE - 1);
 
@@ -295,9 +294,8 @@ void raw_icmp_error(struct sk_buff *skb, int protocol, u32 info)
 	raw_sk = sk_head(&raw_v4_hashinfo.ht[hash]);
 	if (raw_sk != NULL) {
 		iph = (const struct iphdr *)skb->data;
-		net = dev_net(skb->dev);
 
-		while ((raw_sk = __raw_v4_lookup(net, raw_sk, protocol,
+		while ((raw_sk = __raw_v4_lookup(&ctx, raw_sk, protocol,
 						iph->daddr, iph->saddr,
 						skb->dev->ifindex)) != NULL) {
 			raw_err(raw_sk, skb, info);
@@ -494,6 +492,7 @@ static int raw_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	u8  tos;
 	int err;
 	struct ip_options_data opt_copy;
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 	struct raw_frag_vec rfv;
 
 	err = -EMSGSIZE;
@@ -544,7 +543,7 @@ static int raw_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	ipc.oif = sk->sk_bound_dev_if;
 
 	if (msg->msg_controllen) {
-		err = ip_cmsg_send(sock_net(sk), msg, &ipc, false);
+		err = ip_cmsg_send(&sk_ctx, msg, &ipc, false);
 		if (err)
 			goto out;
 		if (ipc.opt)
@@ -609,7 +608,7 @@ static int raw_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	}
 
 	security_sk_classify_flow(sk, flowi4_to_flowi(&fl4));
-	rt = ip_route_output_flow(sock_net(sk), &fl4, sk);
+	rt = ip_route_output_flow(&sk_ctx, &fl4, sk);
 	if (IS_ERR(rt)) {
 		err = PTR_ERR(rt);
 		rt = NULL;
@@ -689,10 +688,11 @@ static int raw_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	struct sockaddr_in *addr = (struct sockaddr_in *) uaddr;
 	int ret = -EINVAL;
 	int chk_addr_ret;
+	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
 
 	if (sk->sk_state != TCP_CLOSE || addr_len < sizeof(struct sockaddr_in))
 		goto out;
-	chk_addr_ret = inet_addr_type(sock_net(sk), addr->sin_addr.s_addr);
+	chk_addr_ret = inet_addr_type(&sk_ctx, addr->sin_addr.s_addr);
 	ret = -EADDRNOTAVAIL;
 	if (addr->sin_addr.s_addr && chk_addr_ret != RTN_LOCAL &&
 	    chk_addr_ret != RTN_MULTICAST && chk_addr_ret != RTN_BROADCAST)
@@ -938,11 +938,12 @@ static struct sock *raw_get_first(struct seq_file *seq)
 {
 	struct sock *sk;
 	struct raw_iter_state *state = raw_seq_private(seq);
+	struct net_ctx *ctx = seq_file_net_ctx(seq);
 
 	for (state->bucket = 0; state->bucket < RAW_HTABLE_SIZE;
 			++state->bucket) {
 		sk_for_each(sk, &state->h->ht[state->bucket])
-			if (sock_net(sk) == seq_file_net(seq))
+			if (sock_net_ctx_eq(sk, ctx))
 				goto found;
 	}
 	sk = NULL;
@@ -953,12 +954,13 @@ found:
 static struct sock *raw_get_next(struct seq_file *seq, struct sock *sk)
 {
 	struct raw_iter_state *state = raw_seq_private(seq);
+	struct net_ctx *ctx = seq_file_net_ctx(seq);
 
 	do {
 		sk = sk_next(sk);
 try_again:
 		;
-	} while (sk && sock_net(sk) != seq_file_net(seq));
+	} while (sk && !sock_net_ctx_eq(sk, ctx));
 
 	if (!sk && ++state->bucket < RAW_HTABLE_SIZE) {
 		sk = sk_head(&state->h->ht[state->bucket]);

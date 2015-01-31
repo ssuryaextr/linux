@@ -118,7 +118,7 @@ static inline u32 frh_get_table(struct fib_rule_hdr *frh, struct nlattr **nla)
 }
 
 struct fib_rules_ops *fib_rules_register(const struct fib_rules_ops *,
-					 struct net *);
+					 struct net_ctx *);
 void fib_rules_unregister(struct fib_rules_ops *);
 
 int fib_rules_lookup(struct fib_rules_ops *, struct flowi *, int flags,

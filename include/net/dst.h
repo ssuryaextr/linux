@@ -323,7 +323,7 @@ static inline void skb_dst_force(struct sk_buff *skb)
  *	so make some cleanups. (no accounting done)
  */
 static inline void __skb_tunnel_rx(struct sk_buff *skb, struct net_device *dev,
-				   struct net *net)
+				   struct net_ctx *ctx)
 {
 	skb->dev = dev;
 
@@ -334,7 +334,7 @@ static inline void __skb_tunnel_rx(struct sk_buff *skb, struct net_device *dev,
 	 */
 	skb_clear_hash_if_not_l4(skb);
 	skb_set_queue_mapping(skb, 0);
-	skb_scrub_packet(skb, !net_eq(net, dev_net(dev)));
+	skb_scrub_packet(skb, !dev_net_ctx_eq(dev, ctx));
 }
 
 /**
@@ -347,12 +347,12 @@ static inline void __skb_tunnel_rx(struct sk_buff *skb, struct net_device *dev,
  *	Note: this accounting is not SMP safe.
  */
 static inline void skb_tunnel_rx(struct sk_buff *skb, struct net_device *dev,
-				 struct net *net)
+				 struct net_ctx *ctx)
 {
 	/* TODO : stats should be SMP safe */
 	dev->stats.rx_packets++;
 	dev->stats.rx_bytes += skb->len;
-	__skb_tunnel_rx(skb, dev, net);
+	__skb_tunnel_rx(skb, dev, ctx);
 }
 
 /* Children define the path of the packet through the
@@ -485,7 +485,7 @@ enum {
 
 struct flowi;
 #ifndef CONFIG_XFRM
-static inline struct dst_entry *xfrm_lookup(struct net *net,
+static inline struct dst_entry *xfrm_lookup(struct net_ctx *net_ctx,
 					    struct dst_entry *dst_orig,
 					    const struct flowi *fl, struct sock *sk,
 					    int flags)
@@ -493,7 +493,7 @@ static inline struct dst_entry *xfrm_lookup(struct net *net,
 	return dst_orig;
 }
 
-static inline struct dst_entry *xfrm_lookup_route(struct net *net,
+static inline struct dst_entry *xfrm_lookup_route(struct net_ctx *ctx,
 						  struct dst_entry *dst_orig,
 						  const struct flowi *fl,
 						  struct sock *sk,
@@ -508,11 +508,11 @@ static inline struct xfrm_state *dst_xfrm(const struct dst_entry *dst)
 }
 
 #else
-struct dst_entry *xfrm_lookup(struct net *net, struct dst_entry *dst_orig,
+struct dst_entry *xfrm_lookup(struct net_ctx *ctx, struct dst_entry *dst_orig,
 			      const struct flowi *fl, struct sock *sk,
 			      int flags);
 
-struct dst_entry *xfrm_lookup_route(struct net *net, struct dst_entry *dst_orig,
+struct dst_entry *xfrm_lookup_route(struct net_ctx *ctx, struct dst_entry *dst_orig,
 				    const struct flowi *fl, struct sock *sk,
 				    int flags);
 
