@@ -20,7 +20,8 @@ struct fib_rule {
 	/* 3 bytes hole, try to use */
 	u32			target;
 	struct fib_rule __rcu	*ctarget;
-	struct net		*fr_net;
+	struct net_ctx		fr_net_ctx;
+#define fr_net  fr_net_ctx.net
 
 	atomic_t		refcnt;
 	u32			pref;
@@ -75,7 +76,8 @@ struct fib_rules_ops {
 	const struct nla_policy	*policy;
 	struct list_head	rules_list;
 	struct module		*owner;
-	struct net		*fro_net;
+	struct net_ctx		fro_net_ctx;
+#define fro_net  fro_net_ctx.net
 	struct rcu_head		rcu;
 };
 
