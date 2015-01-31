@@ -238,8 +238,19 @@ struct ip6_flowlabel {
 	} owner;
 	unsigned long		lastuse;
 	unsigned long		expires;
-	struct net		*fl_net;
+	struct net_ctx		fl_net_ctx;
+#define fl_net  fl_net_ctx.net
 };
+
+static inline
+int fl_net_ctx_eq(struct ip6_flowlabel *fl, struct net_ctx *ctx)
+{
+#ifdef CONFIG_NET_NS
+	return net_eq(fl->fl_net, ctx->net);
+#else
+	return 1;
+#endif
+}
 
 #define IPV6_FLOWINFO_MASK	cpu_to_be32(0x0FFFFFFF)
 #define IPV6_FLOWLABEL_MASK	cpu_to_be32(0x000FFFFF)
