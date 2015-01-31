@@ -4,6 +4,7 @@
 #include <linux/types.h>
 #include <linux/netlink.h>
 #include <linux/jiffies.h>
+#include <net/net_namespace.h>
 
 /* ========================================================================
  *         Netlink Messages and Attributes Interface (As Seen On TV)
@@ -221,7 +222,8 @@ struct nla_policy {
  */
 struct nl_info {
 	struct nlmsghdr		*nlh;
-	struct net		*nl_net;
+	struct net_ctx		nl_net_ctx;
+#define nl_net  nl_net_ctx.net
 	u32			portid;
 };
 
