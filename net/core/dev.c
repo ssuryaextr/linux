@@ -684,6 +684,14 @@ struct net_device *__dev_get_by_name(struct net *net, const char *name)
 }
 EXPORT_SYMBOL(__dev_get_by_name);
 
+struct net_device *__dev_get_by_name_ctx(struct net_ctx *ctx, const char *name)
+{
+	struct net_device *dev = __dev_get_by_name(ctx->net, name);
+
+	return dev;
+}
+EXPORT_SYMBOL(__dev_get_by_name_ctx);
+
 /**
  *	dev_get_by_name_rcu	- find a device by its name
  *	@net: the applicable net namespace
@@ -759,6 +767,14 @@ struct net_device *__dev_get_by_index(struct net *net, int ifindex)
 }
 EXPORT_SYMBOL(__dev_get_by_index);
 
+struct net_device *__dev_get_by_index_ctx(struct net_ctx *ctx, int ifindex)
+{
+	struct net_device *dev = __dev_get_by_index(ctx->net, ifindex);
+
+	return dev;
+}
+EXPORT_SYMBOL(__dev_get_by_index_ctx);
+
 /**
  *	dev_get_by_index_rcu - find a device by its ifindex
  *	@net: the applicable net namespace
@@ -782,6 +798,25 @@ struct net_device *dev_get_by_index_rcu(struct net *net, int ifindex)
 	return NULL;
 }
 EXPORT_SYMBOL(dev_get_by_index_rcu);
+
+/**
+ *	dev_get_by_index_rcu_ctx - find a device by its ifindex
+ *	@net_ctx: the applicable net context
+ *	@ifindex: index of device
+ *
+ *	Search for an interface by index. Returns %NULL if the device
+ *	is not found or a pointer to the device. The device has not
+ *	had its reference counter increased so the caller must be careful
+ *	about locking. The caller must hold RCU lock.
+ */
+
+struct net_device *dev_get_by_index_rcu_ctx(struct net_ctx *ctx, int ifindex)
+{
+	struct net_device *dev = dev_get_by_index_rcu(ctx->net, ifindex);
+
+	return dev;
+}
+EXPORT_SYMBOL(dev_get_by_index_rcu_ctx);
 
 
 /**
