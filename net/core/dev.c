@@ -688,6 +688,9 @@ struct net_device *__dev_get_by_name_ctx(struct net_ctx *ctx, const char *name)
 {
 	struct net_device *dev = __dev_get_by_name(ctx->net, name);
 
+	if (dev && !vrf_eq(dev_vrf(dev), ctx->vrf))
+		dev = NULL;
+
 	return dev;
 }
 EXPORT_SYMBOL(__dev_get_by_name_ctx);
@@ -771,6 +774,9 @@ struct net_device *__dev_get_by_index_ctx(struct net_ctx *ctx, int ifindex)
 {
 	struct net_device *dev = __dev_get_by_index(ctx->net, ifindex);
 
+	if (dev && !vrf_eq(dev_vrf(dev), ctx->vrf))
+		dev = NULL;
+
 	return dev;
 }
 EXPORT_SYMBOL(__dev_get_by_index_ctx);
@@ -813,6 +819,9 @@ EXPORT_SYMBOL(dev_get_by_index_rcu);
 struct net_device *dev_get_by_index_rcu_ctx(struct net_ctx *ctx, int ifindex)
 {
 	struct net_device *dev = dev_get_by_index_rcu(ctx->net, ifindex);
+
+	if (dev && !vrf_eq(dev_vrf(dev), ctx->vrf))
+		dev = NULL;
 
 	return dev;
 }

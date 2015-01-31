@@ -127,7 +127,8 @@ struct fib_info {
 static inline
 int fib_net_ctx_eq(const struct fib_info *fi, const struct net_ctx *ctx)
 {
-	if (net_eq(fi->fib_net_ctx.net, ctx->net))
+	if (net_eq(fi->fib_net_ctx.net, ctx->net) &&
+	    vrf_eq(fi->fib_net_ctx.vrf, ctx->vrf))
 		return 1;
 
 	return 0;

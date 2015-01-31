@@ -2846,9 +2846,11 @@ static void neigh_copy_dflt_parms(struct net_ctx *ctx, struct neigh_parms *p,
 
 	rcu_read_lock();
 	for_each_netdev_rcu(ctx->net, dev) {
-		struct neigh_parms *dst_p =
-				neigh_get_dev_parms_rcu(dev, family);
+		struct neigh_parms *dst_p;
 
+		if (!vrf_eq(dev_vrf(dev), ctx->vrf))
+			continue;
+		dst_p = neigh_get_dev_parms_rcu(dev, family);
 		if (dst_p && !test_bit(index, dst_p->data_state))
 			dst_p->data[index] = p->data[index];
 	}

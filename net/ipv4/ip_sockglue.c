@@ -728,6 +728,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 	{
 		struct net_device *dev = NULL;
 		int ifindex;
+		__u32 vrf;
 
 		if (optlen != sizeof(int))
 			goto e_inval;
@@ -743,7 +744,10 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 		err = -EADDRNOTAVAIL;
 		if (!dev)
 			break;
+		vrf = dev_vrf(dev);
 		dev_put(dev);
+		if (!vrf_eq(vrf, sk_ctx.vrf))
+			break;
 
 		err = -EINVAL;
 		if (sk->sk_bound_dev_if)

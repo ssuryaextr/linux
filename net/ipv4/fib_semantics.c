@@ -929,6 +929,11 @@ struct fib_info *fib_create_info(struct fib_config *cfg)
 		err = -ENODEV;
 		if (nh->nh_dev == NULL)
 			goto failure;
+		if (!vrf_eq(dev_vrf(nh->nh_dev), net_ctx->vrf)) {
+			dev_put(nh->nh_dev);
+			nh->nh_dev = NULL;
+			goto failure;
+		}
 	} else {
 		change_nexthops(fi) {
 			err = fib_check_nh(cfg, fi, nexthop_nh);

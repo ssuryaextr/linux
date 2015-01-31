@@ -220,6 +220,8 @@ begin:
 	result = NULL;
 	hiscore = 0;
 	sk_nulls_for_each_rcu(sk, node, &ilb->head) {
+		if (!vrf_eq(sk->sk_vrf, ctx->vrf) && !vrf_is_any(sk->sk_vrf))
+			continue;
 		score = compute_score(sk, ctx, hnum, daddr, dif);
 		if (score > hiscore) {
 			result = sk;

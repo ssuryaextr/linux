@@ -247,7 +247,7 @@ static inline
 int fl_net_ctx_eq(struct ip6_flowlabel *fl, struct net_ctx *ctx)
 {
 #ifdef CONFIG_NET_NS
-	return net_eq(fl->fl_net, ctx->net);
+	return net_eq(fl->fl_net, ctx->net) && vrf_eq(fl->fl_vrf, ctx->vrf);
 #else
 	return 1;
 #endif

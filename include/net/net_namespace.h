@@ -215,7 +215,7 @@ int net_eq(const struct net *net1, const struct net *net2)
 static inline
 int net_ctx_eq(struct net_ctx *ctx1, struct net_ctx *ctx2)
 {
-	return net_eq(ctx1->net, ctx2->net);
+	return net_eq(ctx1->net, ctx2->net) && vrf_eq(ctx1->vrf, ctx2->vrf);
 }
 
 

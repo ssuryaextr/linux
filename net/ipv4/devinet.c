@@ -951,7 +951,7 @@ int devinet_ioctl(struct net_ctx *net_ctx, unsigned int cmd, void __user *arg)
 	rtnl_lock();
 
 	ret = -ENODEV;
-	dev = __dev_get_by_name(net, ifr.ifr_name);
+	dev = __dev_get_by_name_ctx(net_ctx, ifr.ifr_name);
 	if (!dev)
 		goto done;
 
@@ -1166,6 +1166,7 @@ __be32 inet_select_addr(const struct net_device *dev, __be32 dst, int scope)
 	__be32 addr = 0;
 	struct in_device *in_dev;
 	struct net *net = dev_net(dev);
+	__u32 vrf = dev_vrf(dev);
 
 	rcu_read_lock();
 	in_dev = __in_dev_get_rcu(dev);
@@ -1192,6 +1193,8 @@ no_in_dev:
 	   in dev_base list.
 	 */
 	for_each_netdev_rcu(net, dev) {
+		if (!vrf_eq(dev_vrf(dev), vrf))
+			continue;
 		in_dev = __in_dev_get_rcu(dev);
 		if (!in_dev)
 			continue;
@@ -1266,6 +1269,8 @@ __be32 inet_confirm_addr(struct net_ctx *ctx, struct in_device *in_dev,
 
 	rcu_read_lock();
 	for_each_netdev_rcu(ctx->net, dev) {
+		if (!vrf_eq(dev_vrf(dev), ctx->vrf))
+			continue;
 		in_dev = __in_dev_get_rcu(dev);
 		if (in_dev) {
 			addr = confirm_addr_indev(in_dev, dst, local, scope);
@@ -1561,6 +1566,8 @@ static int inet_dump_ifaddr(struct sk_buff *skb, struct netlink_callback *cb)
 				goto cont;
 			if (h > s_h || idx > s_idx)
 				s_ip_idx = 0;
+			if (!vrf_eq(dev_vrf(dev), vrf))
+				goto cont;
 			in_dev = __in_dev_get_rcu(dev);
 			if (!in_dev)
 				goto cont;
@@ -1882,6 +1889,8 @@ static int inet_netconf_dump_devconf(struct sk_buff *skb,
 		cb->seq = genid ^ net->dev_base_seq;
 		hlist_for_each_entry_rcu(dev, head, index_hlist) {
 			if (idx < s_idx)
+				goto cont;
+			if (!vrf_eq(dev_vrf(dev), vrf))
 				goto cont;
 			in_dev = __in_dev_get_rcu(dev);
 			if (!in_dev)

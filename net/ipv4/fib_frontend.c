@@ -418,7 +418,7 @@ static int rtentry_to_fib_config(struct net_ctx *ctx, int cmd,
 		colon = strchr(devname, ':');
 		if (colon)
 			*colon = 0;
-		dev = __dev_get_by_name(net, devname);
+		dev = __dev_get_by_name_ctx(ctx, devname);
 		if (!dev)
 			return -ENODEV;
 		cfg->fc_oif = dev->ifindex;

@@ -317,7 +317,7 @@ static int fib_nl_newrule(struct sk_buff *skb, struct nlmsghdr* nlh)
 
 		rule->iifindex = -1;
 		nla_strlcpy(rule->iifname, tb[FRA_IIFNAME], IFNAMSIZ);
-		dev = __dev_get_by_name(net, rule->iifname);
+		dev = __dev_get_by_name_ctx(&sk_ctx, rule->iifname);
 		if (dev)
 			rule->iifindex = dev->ifindex;
 	}
@@ -327,7 +327,7 @@ static int fib_nl_newrule(struct sk_buff *skb, struct nlmsghdr* nlh)
 
 		rule->oifindex = -1;
 		nla_strlcpy(rule->oifname, tb[FRA_OIFNAME], IFNAMSIZ);
-		dev = __dev_get_by_name(net, rule->oifname);
+		dev = __dev_get_by_name_ctx(&sk_ctx, rule->oifname);
 		if (dev)
 			rule->oifindex = dev->ifindex;
 	}

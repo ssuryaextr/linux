@@ -1021,6 +1021,8 @@ static int arp_req_set_public(struct net_ctx *ctx, struct arpreq *r,
 	if (!dev && (r->arp_flags & ATF_COM)) {
 		dev = dev_getbyhwaddr_rcu(net, r->arp_ha.sa_family,
 				      r->arp_ha.sa_data);
+		if (dev && !vrf_eq(dev_vrf(dev), ctx->vrf))
+			dev = NULL;
 		if (!dev)
 			return -ENODEV;
 	}
@@ -1214,7 +1216,7 @@ int arp_ioctl(struct net_ctx *ctx, unsigned int cmd, void __user *arg)
 	rtnl_lock();
 	if (r.arp_dev[0]) {
 		err = -ENODEV;
-		dev = __dev_get_by_name(net, r.arp_dev);
+		dev = __dev_get_by_name_ctx(ctx, r.arp_dev);
 		if (dev == NULL)
 			goto out;
 

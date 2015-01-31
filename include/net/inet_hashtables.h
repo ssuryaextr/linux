@@ -101,7 +101,8 @@ void ib_net_ctx_set(struct inet_bind_bucket *ib, struct net_ctx *ctx)
 static inline
 int ib_net_ctx_eq(struct inet_bind_bucket *ib, struct net_ctx *ctx)
 {
-	if (net_eq(ib_net(ib), ctx->net))
+	if (net_eq(ib_net(ib), ctx->net) &&
+	    vrf_eq(ib->ib_net_ctx.vrf, ctx->vrf))
 		return 1;
 
 	return 0;

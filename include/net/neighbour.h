@@ -294,7 +294,8 @@ int neigh_parms_net_ctx_eq(const struct neigh_parms *parms,
 			   const struct net_ctx *net_ctx)
 {
 #ifdef CONFIG_NET_NS
-	if (net_eq(neigh_parms_net(parms), net_ctx->net))
+	if (net_eq(neigh_parms_net(parms), net_ctx->net) &&
+	    vrf_eq(neigh_parms_vrf(parms), net_ctx->vrf))
 		return 1;
 
 	return 0;
@@ -330,7 +331,8 @@ int pneigh_net_ctx_eq(const struct pneigh_entry *pneigh,
 		      const struct net_ctx *net_ctx)
 {
 #ifdef CONFIG_NET_NS
-	if (net_eq(pneigh_net(pneigh), net_ctx->net))
+	if (net_eq(pneigh_net(pneigh), net_ctx->net) &&
+	    vrf_eq(pneigh->net_ctx.vrf, net_ctx->vrf))
 		return 1;
 
 	return 0;
