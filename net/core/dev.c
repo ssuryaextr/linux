@@ -3698,6 +3698,7 @@ static int __netif_receive_skb_core(struct sk_buff *skb, bool pfmemalloc)
 
 another_round:
 	skb->skb_iif = skb->dev->ifindex;
+	skb->vrf = skb->dev->nd_vrf;
 
 	__this_cpu_inc(softnet_data.processed);
 

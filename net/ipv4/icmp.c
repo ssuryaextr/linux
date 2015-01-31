@@ -389,7 +389,7 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 	struct ipcm_cookie ipc;
 	struct rtable *rt = skb_rtable(skb);
 	struct net *net = dev_net(rt->dst.dev);
-	struct net_ctx dev_ctx = { .net = net };
+	struct net_ctx dev_ctx = { .net = net, .vrf = skb->vrf };
 	struct flowi4 fl4;
 	struct sock *sk;
 	struct inet_sock *inet;

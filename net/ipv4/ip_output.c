@@ -471,6 +471,8 @@ static void ip_copy_metadata(struct sk_buff *to, struct sk_buff *from)
 	to->ipvs_property = from->ipvs_property;
 #endif
 	skb_copy_secmark(to, from);
+
+	to->vrf = from->vrf;
 }
 
 /*

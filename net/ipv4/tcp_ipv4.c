@@ -1368,6 +1368,7 @@ struct sock *tcp_v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 		sk_nocaps_add(newsk, NETIF_F_GSO_MASK);
 	}
 #endif
+	newsk->sk_vrf = skb->vrf;
 
 	if (__inet_inherit_port(sk, newsk) < 0)
 		goto put_and_exit;
@@ -1395,7 +1396,7 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 	const struct iphdr *iph = ip_hdr(skb);
 	struct sock *nsk;
 	struct request_sock **prev;
-	struct net_ctx ctx = { .net = sock_net(sk) };
+	struct net_ctx ctx = { .net = sock_net(sk), .vrf = skb->vrf };
 	/* Find possible connection requests. */
 	struct request_sock *req = inet_csk_search_req(sk, &prev, th->source,
 						       iph->saddr, iph->daddr);

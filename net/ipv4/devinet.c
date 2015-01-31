@@ -1603,6 +1603,8 @@ static void rtmsg_ifa(int event, struct in_ifaddr *ifa, struct nlmsghdr *nlh,
 	if (skb == NULL)
 		goto errout;
 
+	skb->vrf = ifa->ifa_dev->dev->nd_vrf;
+
 	err = inet_fill_ifaddr(skb, ifa, portid, seq, event, 0);
 	if (err < 0) {
 		/* -EMSGSIZE implies BUG in inet_nlmsg_size() */

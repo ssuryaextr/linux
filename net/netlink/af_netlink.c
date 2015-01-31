@@ -1736,6 +1736,14 @@ static struct sk_buff *netlink_trim(struct sk_buff *skb, gfp_t allocation)
 	return skb;
 }
 
+/*
+ * kernel sockets are all in vrf 1 (default vrf). Transactions
+ * (e.g., add/delete address/route) are happening in other vrfs.
+ * Packets for transactions from userpsace are funneled through the
+ * kernel sockets. Handle this case by resetting skb vrf after ownership
+ * assignment. rtnetlink based functions need to use skb->vrf for
+ * decisions which is set to the original userspace socket's vrf id.
+ */
 static int netlink_unicast_kernel(struct sock *sk, struct sk_buff *skb,
 				  struct sock *ssk)
 {
@@ -1744,8 +1752,11 @@ static int netlink_unicast_kernel(struct sock *sk, struct sk_buff *skb,
 
 	ret = -ECONNREFUSED;
 	if (nlk->netlink_rcv != NULL) {
+		__u32 vrf = skb->vrf;
 		ret = skb->len;
 		netlink_skb_set_owner_r(skb, sk);
+		/* use vrf from sending socket, not kernel's socket context */
+		skb->vrf = vrf;
 		NETLINK_CB(skb).sk = ssk;
 		netlink_deliver_tap_kernel(sk, ssk, skb);
 		nlk->netlink_rcv(skb);
@@ -2313,6 +2324,7 @@ static int netlink_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	if (skb == NULL)
 		goto out;
 
+	skb->vrf = sk->sk_vrf;
 	NETLINK_CB(skb).portid	= nlk->portid;
 	NETLINK_CB(skb).dst_group = dst_group;
 	NETLINK_CB(skb).creds	= scm.creds;

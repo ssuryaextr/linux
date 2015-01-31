@@ -2780,6 +2780,8 @@ static void __neigh_notify(struct neighbour *n, int type, int flags)
 	if (skb == NULL)
 		goto errout;
 
+	skb->vrf = n->dev->nd_vrf;
+
 	err = neigh_fill_info(skb, n, 0, 0, type, flags);
 	if (err < 0) {
 		/* -EMSGSIZE implies BUG in neigh_nlmsg_size() */

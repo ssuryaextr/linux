@@ -1155,6 +1155,7 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	ireq->ir_rmt_port = tcp_hdr(skb)->source;
 	ireq->ir_num = ntohs(tcp_hdr(skb)->dest);
 	ireq->ir_mark = inet_request_mark(sk, skb);
+	ireq->ir_vrf = skb->vrf;
 }
 
 extern void tcp_openreq_init_rwin(struct request_sock *req,

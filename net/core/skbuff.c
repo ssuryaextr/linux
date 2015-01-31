@@ -251,6 +251,7 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 	skb->end = skb->tail + size;
 	skb->mac_header = (typeof(skb->mac_header))~0U;
 	skb->transport_header = (typeof(skb->transport_header))~0U;
+	skb->vrf = VRF_DEFAULT;
 
 	/* make sure we initialize shinfo sequentially */
 	shinfo = skb_shinfo(skb);
@@ -514,6 +515,7 @@ struct sk_buff *__netdev_alloc_skb(struct net_device *dev,
 	if (likely(skb)) {
 		skb_reserve(skb, NET_SKB_PAD);
 		skb->dev = dev;
+		skb->vrf = dev->nd_vrf;
 	}
 
 	return skb;
@@ -832,6 +834,7 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 #endif
 #endif
 
+	new->vrf = old->vrf;
 }
 
 /*
@@ -863,6 +866,8 @@ static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb)
 
 	atomic_inc(&(skb_shinfo(skb)->dataref));
 	skb->cloned = 1;
+
+	n->vrf = skb->vrf;
 
 	return n;
 #undef C
@@ -1057,6 +1062,9 @@ struct sk_buff *skb_copy(const struct sk_buff *skb, gfp_t gfp_mask)
 		BUG();
 
 	copy_skb_header(n, skb);
+
+	n->vrf = skb->vrf;
+
 	return n;
 }
 EXPORT_SYMBOL(skb_copy);
@@ -1120,6 +1128,8 @@ struct sk_buff *__pskb_copy_fclone(struct sk_buff *skb, int headroom,
 	}
 
 	copy_skb_header(n, skb);
+
+	n->vrf = skb->vrf;
 out:
 	return n;
 }
@@ -1293,6 +1303,8 @@ struct sk_buff *skb_copy_expand(const struct sk_buff *skb,
 	copy_skb_header(n, skb);
 
 	skb_headers_offset_update(n, newheadroom - oldheadroom);
+
+	n->vrf = skb->vrf;
 
 	return n;
 }

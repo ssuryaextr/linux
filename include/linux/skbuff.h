@@ -522,6 +522,7 @@ struct sk_buff {
 	};
 	struct sock		*sk;
 	struct net_device	*dev;
+	__u32			vrf;
 
 	/*
 	 * This is the control buffer. It is free to use for every
@@ -665,9 +666,9 @@ struct sk_buff {
 	atomic_t		users;
 };
 
-#define SKB_NET_CTX_DEV(skb)  { .net = dev_net((skb)->dev) }
-#define SKB_NET_CTX_DST(skb)  { .net = dev_net(skb_dst((skb))->dev) }
-#define SKB_NET_CTX_SOCK(skb) { .net = sock_net((skb)->sk) }
+#define SKB_NET_CTX_DEV(skb)  { .net = dev_net((skb)->dev),	     .vrf = (skb)->vrf }
+#define SKB_NET_CTX_DST(skb)  { .net = dev_net(skb_dst((skb))->dev), .vrf = (skb)->vrf }
+#define SKB_NET_CTX_SOCK(skb) { .net = sock_net((skb)->sk),	     .vrf = (skb)->vrf }
 
 #ifdef __KERNEL__
 /*
