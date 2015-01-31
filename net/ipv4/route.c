@@ -2706,10 +2706,19 @@ static __net_initdata struct pernet_operations sysctl_route_ops = {
 
 static __net_init int rt_genid_init(struct net *net)
 {
+	int genid;
+
 	atomic_set(&net->ipv4.rt_genid, 0);
 	atomic_set(&net->fnhe_genid, 0);
-	get_random_bytes(&net->ipv4.dev_addr_genid,
-			 sizeof(net->ipv4.dev_addr_genid));
+
+again:
+	get_random_bytes(&genid, sizeof(genid));
+	genid &= ~VRF_MASK;
+	if (genid == 0)
+		goto again;
+
+	atomic_set(&net->ipv4.dev_addr_genid, genid);
+
 	return 0;
 }
 

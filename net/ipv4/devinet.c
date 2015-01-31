@@ -1536,6 +1536,7 @@ static int inet_dump_ifaddr(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct net_ctx sk_ctx = SOCK_NET_CTX(skb->sk);
 	struct net *net = sk_ctx.net;
+	__u32 vrf = sk_ctx.vrf;
 	int h, s_h;
 	int idx, s_idx;
 	int ip_idx, s_ip_idx;
@@ -1549,11 +1550,12 @@ static int inet_dump_ifaddr(struct sk_buff *skb, struct netlink_callback *cb)
 	s_ip_idx = ip_idx = cb->args[2];
 
 	for (h = s_h; h < NETDEV_HASHENTRIES; h++, s_idx = 0) {
+		int genid;
 		idx = 0;
 		head = &net->dev_index_head[h];
 		rcu_read_lock();
-		cb->seq = atomic_read(&net->ipv4.dev_addr_genid) ^
-			  net->dev_base_seq;
+		genid = atomic_read(&net->ipv4.dev_addr_genid) + vrf;
+		cb->seq = genid ^ net->dev_base_seq;
 		hlist_for_each_entry_rcu(dev, head, index_hlist) {
 			if (idx < s_idx)
 				goto cont;
@@ -1861,6 +1863,7 @@ static int inet_netconf_dump_devconf(struct sk_buff *skb,
 {
 	struct net_ctx sk_ctx = SOCK_NET_CTX(skb->sk);
 	struct net *net = sk_ctx.net;
+	__u32 vrf = sk_ctx.vrf;
 	int h, s_h;
 	int idx, s_idx;
 	struct net_device *dev;
@@ -1871,11 +1874,12 @@ static int inet_netconf_dump_devconf(struct sk_buff *skb,
 	s_idx = idx = cb->args[1];
 
 	for (h = s_h; h < NETDEV_HASHENTRIES; h++, s_idx = 0) {
+		int genid;
 		idx = 0;
 		head = &net->dev_index_head[h];
 		rcu_read_lock();
-		cb->seq = atomic_read(&net->ipv4.dev_addr_genid) ^
-			  net->dev_base_seq;
+		genid = atomic_read(&net->ipv4.dev_addr_genid) + vrf;
+		cb->seq = genid ^ net->dev_base_seq;
 		hlist_for_each_entry_rcu(dev, head, index_hlist) {
 			if (idx < s_idx)
 				goto cont;

@@ -180,7 +180,7 @@ __be32 fib_info_update_nh_saddr(struct net_ctx *ctx, struct fib_nh *nh);
 
 #define FIB_RES_SADDR(ctx, res)				\
 	((FIB_RES_NH(res).nh_saddr_genid ==		\
-	  atomic_read(&(ctx)->net->ipv4.dev_addr_genid)) ? \
+	  (atomic_read(&(ctx)->net->ipv4.dev_addr_genid) + (ctx)->vrf)) ? \
 	 FIB_RES_NH(res).nh_saddr :			\
 	 fib_info_update_nh_saddr((ctx), &FIB_RES_NH(res)))
 #define FIB_RES_GW(res)			(FIB_RES_NH(res).nh_gw)

@@ -756,7 +756,7 @@ __be32 fib_info_update_nh_saddr(struct net_ctx *net_ctx, struct fib_nh *nh)
 	nh->nh_saddr = inet_select_addr(nh->nh_dev,
 					nh->nh_gw,
 					nh->nh_parent->fib_scope);
-	nh->nh_saddr_genid = atomic_read(&net->ipv4.dev_addr_genid);
+	nh->nh_saddr_genid = atomic_read(&net->ipv4.dev_addr_genid) + net_ctx->vrf;
 
 	return nh->nh_saddr;
 }

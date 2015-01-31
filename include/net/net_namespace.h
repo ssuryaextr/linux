@@ -372,12 +372,14 @@ static inline void unregister_net_sysctl_table(struct ctl_table_header *header)
 
 static inline int rt_genid_ipv4(struct net_ctx *ctx)
 {
-	return atomic_read(&ctx->net->ipv4.rt_genid);
+	return atomic_read(&ctx->net->ipv4.rt_genid) + ctx->vrf;
 }
 
 static inline void rt_genid_bump_ipv4(struct net *net)
 {
-	atomic_inc(&net->ipv4.rt_genid);
+	int inc = 1 << VRF_BITS;
+
+	atomic_add(inc, &net->ipv4.rt_genid);
 }
 
 extern void (*__fib6_flush_trees)(struct net *net);
@@ -404,12 +406,14 @@ static inline void rt_genid_bump_all(struct net *net)
 
 static inline int fnhe_genid(struct net_ctx *ctx)
 {
-	return atomic_read(&ctx->net->fnhe_genid);
+	return atomic_read(&ctx->net->fnhe_genid) + ctx->vrf;
 }
 
 static inline void fnhe_genid_bump(struct net *net)
 {
-	atomic_inc(&net->fnhe_genid);
+	int inc = 1 << VRF_BITS;
+
+	atomic_add(inc, &net->fnhe_genid);
 }
 
 #endif /* __NET_NET_NAMESPACE_H */
