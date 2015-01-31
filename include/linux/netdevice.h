@@ -1697,9 +1697,8 @@ struct net_device {
 	struct netpoll_info __rcu	*npinfo;
 #endif
 
-#ifdef CONFIG_NET_NS
-	struct net		*nd_net;
-#endif
+	struct net_ctx		net_ctx;
+#define nd_net net_ctx.net
 
 	/* mid-layer private */
 	union {
@@ -1843,6 +1842,18 @@ void dev_net_set(struct net_device *dev, struct net *net)
 	release_net(dev->nd_net);
 	dev->nd_net = hold_net(net);
 #endif
+}
+
+/* get net_ctx from device */
+#define DEV_NET_CTX(dev)  { .net = dev_net((dev)) }
+
+static inline
+int dev_net_ctx_eq(const struct net_device *dev, struct net_ctx *ctx)
+{
+	if (net_eq(dev_net(dev), ctx->net))
+		return 1;
+
+	return 0;
 }
 
 static inline bool netdev_uses_dsa(struct net_device *dev)
