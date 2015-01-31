@@ -352,6 +352,8 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	tsk->splice_pipe = NULL;
 	tsk->task_frag.page = NULL;
 
+	tsk->vrf = orig->vrf;
+
 	account_kernel_stack(ti, 1);
 
 	return tsk;

@@ -1459,6 +1459,8 @@ struct task_struct {
 	struct files_struct *files;
 /* namespaces */
 	struct nsproxy *nsproxy;
+/* vrf context within a namespace */
+	__u32 vrf;
 /* signal handlers */
 	struct signal_struct *signal;
 	struct sighand_struct *sighand;
