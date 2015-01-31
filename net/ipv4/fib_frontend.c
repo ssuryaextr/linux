@@ -155,7 +155,7 @@ static inline unsigned int __inet_dev_addr_type(struct net_ctx *ctx,
 						__be32 addr)
 {
 	struct net *net = ctx->net;
-	struct flowi4		fl4 = { .daddr = addr };
+	struct flowi4		fl4 = { .daddr = addr, .flowi4_vrf = ctx->vrf };
 	struct fib_result	res;
 	unsigned int ret = RTN_BROADCAST;
 	struct fib_table *local_table;
@@ -221,6 +221,7 @@ __be32 fib_compute_spec_dst(struct sk_buff *skb)
 		fl4.flowi4_tos = RT_TOS(ip_hdr(skb)->tos);
 		fl4.flowi4_scope = scope;
 		fl4.flowi4_mark = IN_DEV_SRC_VMARK(in_dev) ? skb->mark : 0;
+		fl4.flowi4_vrf = dev_ctx.vrf;
 		if (!fib_lookup(&dev_ctx, &fl4, &res))
 			return FIB_RES_PREFSRC(&dev_ctx, res);
 	} else {
@@ -258,6 +259,7 @@ static int __fib_validate_source(struct sk_buff *skb, __be32 src, __be32 dst,
 	no_addr = idev->ifa_list == NULL;
 
 	fl4.flowi4_mark = IN_DEV_SRC_VMARK(idev) ? skb->mark : 0;
+	fl4.flowi4_vrf = dev_ctx.vrf;
 
 	if (fib_lookup(&dev_ctx, &fl4, &res))
 		goto last_resort;
@@ -292,6 +294,7 @@ static int __fib_validate_source(struct sk_buff *skb, __be32 src, __be32 dst,
 	if (rpf == 1)
 		goto e_rpf;
 	fl4.flowi4_oif = dev->ifindex;
+	fl4.flowi4_vrf = dev_vrf(dev);
 
 	ret = 0;
 	if (fib_lookup(&dev_ctx, &fl4, &res) == 0) {

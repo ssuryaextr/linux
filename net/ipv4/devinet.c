@@ -155,7 +155,7 @@ struct net_device *__ip_dev_find(struct net_ctx *ctx, __be32 addr, bool devref)
 		}
 	}
 	if (!result) {
-		struct flowi4 fl4 = { .daddr = addr };
+		struct flowi4 fl4 = { .daddr = addr, .flowi4_vrf = ctx->vrf };
 		struct fib_result res = { 0 };
 		struct fib_table *local;
 

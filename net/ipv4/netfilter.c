@@ -43,6 +43,7 @@ int ip_route_me_harder(struct sk_buff *skb, unsigned int addr_type)
 	fl4.flowi4_oif = skb->sk ? skb->sk->sk_bound_dev_if : 0;
 	fl4.flowi4_mark = skb->mark;
 	fl4.flowi4_flags = flags;
+	fl4.flowi4_vrf = skb->vrf;
 	rt = ip_route_output_key(&ctx, &fl4);
 	if (IS_ERR(rt))
 		return PTR_ERR(rt);

@@ -28,6 +28,7 @@ static struct dst_entry *__xfrm4_dst_lookup(struct net_ctx *ctx, struct flowi4 *
 	memset(fl4, 0, sizeof(*fl4));
 	fl4->daddr = daddr->a4;
 	fl4->flowi4_tos = tos;
+	fl4->flowi4_vrf = ctx->vrf;
 	if (saddr)
 		fl4->saddr = saddr->a4;
 
@@ -112,6 +113,7 @@ _decode_session4(struct sk_buff *skb, struct flowi *fl, int reverse)
 	memset(fl4, 0, sizeof(struct flowi4));
 	fl4->flowi4_mark = skb->mark;
 	fl4->flowi4_oif = reverse ? skb->skb_iif : oif;
+	fl4->flowi4_vrf = skb->vrf;
 
 	if (!ip_is_fragment(iph)) {
 		switch (iph->protocol) {

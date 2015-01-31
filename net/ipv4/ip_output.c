@@ -1556,7 +1556,7 @@ void ip_send_unicast_reply(struct net_ctx *ctx, struct sk_buff *skb,
 			daddr = replyopts.opt.opt.faddr;
 	}
 
-	flowi4_init_output(&fl4, arg->bound_dev_if,
+	flowi4_init_output(&fl4, skb->vrf, arg->bound_dev_if,
 			   IP4_REPLY_MARK(ctx->net, skb->mark),
 			   RT_TOS(arg->tos),
 			   RT_SCOPE_UNIVERSE, ip_hdr(skb)->protocol,

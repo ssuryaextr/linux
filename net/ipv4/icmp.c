@@ -426,6 +426,7 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 	fl4.flowi4_mark = mark;
 	fl4.flowi4_tos = RT_TOS(ip_hdr(skb)->tos);
 	fl4.flowi4_proto = IPPROTO_ICMP;
+	fl4.flowi4_vrf = skb->vrf;
 	security_skb_classify_flow(skb, flowi4_to_flowi(&fl4));
 	rt = ip_route_output_key(&dev_ctx, &fl4);
 	if (IS_ERR(rt))
@@ -457,6 +458,7 @@ static struct rtable *icmp_route_lookup(struct net_ctx *ctx,
 	fl4->flowi4_mark = mark;
 	fl4->flowi4_tos = RT_TOS(tos);
 	fl4->flowi4_proto = IPPROTO_ICMP;
+	fl4->flowi4_vrf = skb_in->vrf;
 	fl4->fl4_icmp_type = type;
 	fl4->fl4_icmp_code = code;
 	security_skb_classify_flow(skb_in, flowi4_to_flowi(fl4));
@@ -490,6 +492,7 @@ static struct rtable *icmp_route_lookup(struct net_ctx *ctx,
 		unsigned long orefdst;
 
 		fl4_2.daddr = fl4_dec.saddr;
+		fl4_2.flowi4_vrf = skb_in->vrf;
 		rt2 = ip_route_output_key(ctx, &fl4_2);
 		if (IS_ERR(rt2)) {
 			err = PTR_ERR(rt2);

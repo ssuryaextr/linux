@@ -55,6 +55,8 @@ int __fib_lookup(struct net_ctx *ctx, struct flowi4 *flp, struct fib_result *res
 	};
 	int err;
 
+	flp->flowi4_vrf = ctx->vrf;
+
 	err = fib_rules_lookup(ctx->net->ipv4.rules_ops, flowi4_to_flowi(flp),
 			       0, &arg);
 #ifdef CONFIG_IP_ROUTE_CLASSID

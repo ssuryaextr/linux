@@ -1023,7 +1023,7 @@ int udp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		struct net *net = sk_ctx.net;
 
 		fl4 = &fl4_stack;
-		flowi4_init_output(fl4, ipc.oif, sk->sk_mark, tos,
+		flowi4_init_output(fl4, sk_ctx.vrf, ipc.oif, sk->sk_mark, tos,
 				   RT_SCOPE_UNIVERSE, sk->sk_protocol,
 				   inet_sk_flowi_flags(sk),
 				   faddr, saddr, dport, inet->inet_sport);
@@ -1083,6 +1083,7 @@ back_from_confirm:
 	fl4->saddr = saddr;
 	fl4->fl4_dport = dport;
 	fl4->fl4_sport = inet->inet_sport;
+	fl4->flowi4_vrf = sk_ctx.vrf;
 	up->pending = AF_INET;
 
 do_append_data:

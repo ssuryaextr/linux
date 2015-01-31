@@ -458,6 +458,7 @@ static netdev_tx_t reg_vif_xmit(struct sk_buff *skb, struct net_device *dev)
 		.flowi4_oif	= dev->ifindex,
 		.flowi4_iif	= skb->skb_iif ? : LOOPBACK_IFINDEX,
 		.flowi4_mark	= skb->mark,
+		.flowi4_vrf	= skb->vrf,
 	};
 	int err;
 
@@ -1934,6 +1935,7 @@ static struct mr_table *ipmr_rt_fib_lookup(struct net *net, struct sk_buff *skb)
 			       LOOPBACK_IFINDEX :
 			       skb->dev->ifindex),
 		.flowi4_mark = skb->mark,
+		.flowi4_vrf = skb->vrf,
 	};
 	struct mr_table *mrt;
 	int err;
