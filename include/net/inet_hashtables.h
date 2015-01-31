@@ -76,9 +76,7 @@ struct inet_ehash_bucket {
  * ports are created in O(1) time?  I thought so. ;-)	-DaveM
  */
 struct inet_bind_bucket {
-#ifdef CONFIG_NET_NS
-	struct net		*ib_net;
-#endif
+	struct net_ctx		ib_net_ctx;
 	unsigned short		port;
 	signed char		fastreuse;
 	signed char		fastreuseport;
@@ -90,7 +88,22 @@ struct inet_bind_bucket {
 
 static inline struct net *ib_net(struct inet_bind_bucket *ib)
 {
-	return read_pnet(&ib->ib_net);
+	return read_pnet(&ib->ib_net_ctx.net);
+}
+
+static inline
+void ib_net_ctx_set(struct inet_bind_bucket *ib, struct net_ctx *ctx)
+{
+	write_pnet(&ib->ib_net_ctx.net, hold_net(ctx->net));
+}
+
+static inline
+int ib_net_ctx_eq(struct inet_bind_bucket *ib, struct net_ctx *ctx)
+{
+	if (net_eq(ib_net(ib), ctx->net))
+		return 1;
+
+	return 0;
 }
 
 #define inet_bind_bucket_for_each(tb, head) \
