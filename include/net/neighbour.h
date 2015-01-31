@@ -65,9 +65,7 @@ enum {
 };
 
 struct neigh_parms {
-#ifdef CONFIG_NET_NS
-	struct net *net;
-#endif
+	struct net_ctx net_ctx;
 	struct net_device *dev;
 	struct list_head list;
 	int	(*neigh_setup)(struct neighbour *);
@@ -167,9 +165,7 @@ struct neigh_ops {
 
 struct pneigh_entry {
 	struct pneigh_entry	*next;
-#ifdef CONFIG_NET_NS
-	struct net		*net;
-#endif
+	struct net_ctx		net_ctx;
 	struct net_device	*dev;
 	u8			flags;
 	u8			key[0];
@@ -281,9 +277,22 @@ void neigh_parms_release(struct neigh_table *tbl, struct neigh_parms *parms);
 static inline
 struct net *neigh_parms_net(const struct neigh_parms *parms)
 {
-	return read_pnet(&parms->net);
+	return read_pnet(&parms->net_ctx.net);
 }
 
+static inline
+int neigh_parms_net_ctx_eq(const struct neigh_parms *parms,
+			   const struct net_ctx *net_ctx)
+{
+#ifdef CONFIG_NET_NS
+	if (net_eq(neigh_parms_net(parms), net_ctx->net))
+		return 1;
+
+	return 0;
+#else
+	return 1;
+#endif
+}
 unsigned long neigh_rand_reach_time(unsigned long base);
 
 void pneigh_enqueue(struct neigh_table *tbl, struct neigh_parms *p,
@@ -298,7 +307,26 @@ int pneigh_delete(struct neigh_table *tbl, struct net *net, const void *key,
 
 static inline struct net *pneigh_net(const struct pneigh_entry *pneigh)
 {
-	return read_pnet(&pneigh->net);
+	return read_pnet(&pneigh->net_ctx.net);
+}
+static inline
+void pneigh_net_ctx_set(struct pneigh_entry *pneigh,
+			const struct net_ctx *net_ctx)
+{
+	write_pnet(&pneigh->net_ctx.net, hold_net(net_ctx->net));
+}
+static inline
+int pneigh_net_ctx_eq(const struct pneigh_entry *pneigh,
+		      const struct net_ctx *net_ctx)
+{
+#ifdef CONFIG_NET_NS
+	if (net_eq(pneigh_net(pneigh), net_ctx->net))
+		return 1;
+
+	return 0;
+#else
+	return 1;
+#endif
 }
 
 void neigh_app_ns(struct neighbour *n);
