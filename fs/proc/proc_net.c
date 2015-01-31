@@ -54,7 +54,7 @@ int seq_open_net(struct inode *ino, struct file *f,
 		return -ENOMEM;
 	}
 #ifdef CONFIG_NET_NS
-	p->net = net;
+	p->net_ctx.net = net;
 #endif
 	return 0;
 }
