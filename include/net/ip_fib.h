@@ -98,7 +98,8 @@ struct fib_nh {
 struct fib_info {
 	struct hlist_node	fib_hash;
 	struct hlist_node	fib_lhash;
-	struct net		*fib_net;
+	struct net_ctx		fib_net_ctx;
+#define fib_net  fib_net_ctx.net
 	int			fib_treeref;
 	atomic_t		fib_clntref;
 	unsigned int		fib_flags;
@@ -122,6 +123,14 @@ struct fib_info {
 #define fib_dev		fib_nh[0].nh_dev
 };
 
+static inline
+int fib_net_ctx_eq(const struct fib_info *fi, const struct net_ctx *ctx)
+{
+	if (net_eq(fi->fib_net_ctx.net, ctx->net))
+		return 1;
+
+	return 0;
+}
 
 #ifdef CONFIG_IP_MULTIPLE_TABLES
 struct fib_rule;
