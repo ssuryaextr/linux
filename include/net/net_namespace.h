@@ -134,10 +134,18 @@ struct net {
 	atomic_t		fnhe_genid;
 };
 
+struct net_ctx {
+#ifdef CONFIG_NET_NS
+	struct net *net;
+#endif
+};
+
 #include <linux/seq_file_net.h>
 
 /* Init's network namespace */
 extern struct net init_net;
+
+#define INIT_NET_CTX  { .net = &init_net }
 
 #ifdef CONFIG_NET_NS
 struct net *copy_net_ns(unsigned long flags, struct user_namespace *user_ns,
@@ -202,6 +210,13 @@ int net_eq(const struct net *net1, const struct net *net2)
 	return net1 == net2;
 }
 
+static inline
+int net_ctx_eq(struct net_ctx *ctx1, struct net_ctx *ctx2)
+{
+	return net_eq(ctx1->net, ctx2->net);
+}
+
+
 void net_drop_ns(void *);
 
 #else
@@ -222,6 +237,12 @@ static inline struct net *maybe_get_net(struct net *net)
 
 static inline
 int net_eq(const struct net *net1, const struct net *net2)
+{
+	return 1;
+}
+
+static inline
+int net_ctx_eq(struct net_ctx *ctx1, struct net_ctx *ctx2)
 {
 	return 1;
 }
