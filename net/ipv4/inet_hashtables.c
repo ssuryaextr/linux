@@ -62,6 +62,7 @@ struct inet_bind_bucket *inet_bind_bucket_create(struct kmem_cache *cachep,
 
 	if (tb != NULL) {
 		write_pnet(&tb->ib_net_ctx.net, hold_net(ctx->net));
+		tb->ib_net_ctx.vrf = ctx->vrf;
 		tb->port      = snum;
 		tb->fastreuse = 0;
 		tb->fastreuseport = 0;

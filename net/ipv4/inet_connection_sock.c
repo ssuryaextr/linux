@@ -404,7 +404,7 @@ struct dst_entry *inet_csk_route_req(struct sock *sk,
 	const struct inet_request_sock *ireq = inet_rsk(req);
 	struct ip_options_rcu *opt = inet_rsk(req)->opt;
 	struct net *net = sock_net(sk);
-	struct net_ctx ctx = { .net = net };
+	struct net_ctx ctx = { .net = net, .vrf = ireq->ir_vrf };
 	int flags = inet_sk_flowi_flags(sk);
 
 	flowi4_init_output(fl4, sk->sk_bound_dev_if, ireq->ir_mark,
@@ -437,7 +437,7 @@ struct dst_entry *inet_csk_route_child_sock(struct sock *sk,
 	struct inet_sock *newinet = inet_sk(newsk);
 	struct ip_options_rcu *opt;
 	struct net *net = sock_net(sk);
-	struct net_ctx ctx = { .net = net };
+	struct net_ctx ctx = { .net = net, .vrf = ireq->ir_vrf };
 	struct flowi4 *fl4;
 	struct rtable *rt;
 
@@ -681,6 +681,7 @@ struct sock *inet_csk_clone_lock(const struct sock *sk,
 		newsk->sk_write_space = sk_stream_write_space;
 
 		newsk->sk_mark = inet_rsk(req)->ir_mark;
+		newsk->sk_vrf  = inet_rsk(req)->ir_vrf;
 
 		newicsk->icsk_retransmits = 0;
 		newicsk->icsk_backoff	  = 0;

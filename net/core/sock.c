@@ -1392,6 +1392,8 @@ struct sock *sk_alloc(struct net *net, int family, gfp_t priority,
 		sk->sk_prot = sk->sk_prot_creator = prot;
 		sock_lock_init(sk);
 		sock_net_set(sk, get_net(net));
+		/* by default socket takes on vrf of task */
+		sk->sk_vrf = current->vrf;
 		atomic_set(&sk->sk_wmem_alloc, 1);
 
 		sock_update_classid(sk);

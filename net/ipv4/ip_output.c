@@ -1574,6 +1574,7 @@ void ip_send_unicast_reply(struct net_ctx *ctx, struct sk_buff *skb,
 	sk->sk_protocol = ip_hdr(skb)->protocol;
 	sk->sk_bound_dev_if = arg->bound_dev_if;
 	sock_net_set(sk, ctx->net);
+	sk->sk_vrf = ctx->vrf;
 	__skb_queue_head_init(&sk->sk_write_queue);
 	sk->sk_sndbuf = sysctl_wmem_default;
 	err = ip_append_data(sk, &fl4, ip_reply_glue_bits, arg->iov->iov_base,

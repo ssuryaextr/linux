@@ -555,6 +555,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 	case IP_MULTICAST_LOOP:
 	case IP_RECVORIGDSTADDR:
 	case IP_CHECKSUM:
+	case IP_VRF_CONTEXT:
 		if (optlen >= sizeof(int)) {
 			if (get_user(val, (int __user *) optval))
 				return -EFAULT;
@@ -1104,6 +1105,16 @@ mc_msf_out:
 		inet->min_ttl = val;
 		break;
 
+	case IP_VRF_CONTEXT:
+		/* VRF context can only be set on unconnected sockets */
+		if (inet->inet_sport || inet->inet_dport) {
+			err = -EINVAL;
+			break;
+		}
+		sk->sk_vrf = val;
+		err = 0;
+		break;
+
 	default:
 		err = -ENOPROTOOPT;
 		break;
@@ -1410,6 +1421,9 @@ static int do_ip_getsockopt(struct sock *sk, int level, int optname,
 		break;
 	case IP_MINTTL:
 		val = inet->min_ttl;
+		break;
+	case IP_VRF_CONTEXT:
+		val = sk->sk_vrf;
 		break;
 	default:
 		release_sock(sk);
