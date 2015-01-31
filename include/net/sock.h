@@ -146,7 +146,7 @@ typedef __u64 __bitwise __addrpair;
  *	@skc_bind_node: bind hash linkage for various protocol lookup tables
  *	@skc_portaddr_node: second hash linkage for UDP/UDP-Lite protocol
  *	@skc_prot: protocol handlers inside a network family
- *	@skc_net: reference to the network namespace of this socket
+ *	@skc_net_ctx: reference to network context of this socket
  *	@skc_node: main hash linkage for various protocol lookup tables
  *	@skc_nulls_node: main hash linkage for TCP/UDP/UDP-Lite protocol
  *	@skc_tx_queue_mapping: tx queue number for this connection
@@ -190,9 +190,8 @@ struct sock_common {
 		struct hlist_nulls_node skc_portaddr_node;
 	};
 	struct proto		*skc_prot;
-#ifdef CONFIG_NET_NS
-	struct net	 	*skc_net;
-#endif
+	struct net_ctx		skc_net_ctx;
+#define skc_net  skc_net_ctx.net
 
 #if IS_ENABLED(CONFIG_IPV6)
 	struct in6_addr		skc_v6_daddr;
@@ -326,7 +325,7 @@ struct sock {
 #define sk_bound_dev_if		__sk_common.skc_bound_dev_if
 #define sk_bind_node		__sk_common.skc_bind_node
 #define sk_prot			__sk_common.skc_prot
-#define sk_net			__sk_common.skc_net
+#define sk_net			__sk_common.skc_net_ctx.net
 #define sk_v6_daddr		__sk_common.skc_v6_daddr
 #define sk_v6_rcv_saddr	__sk_common.skc_v6_rcv_saddr
 
@@ -2195,6 +2194,14 @@ static inline
 void sock_net_set(struct sock *sk, struct net *net)
 {
 	write_pnet(&sk->sk_net, net);
+}
+
+#define SOCK_NET_CTX(sk)  { .net = sock_net((sk)) }
+
+static inline
+int sock_net_ctx_eq(struct sock *sk, struct net_ctx *ctx)
+{
+	return net_eq(sock_net(sk), ctx->net);
 }
 
 /*
