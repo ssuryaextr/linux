@@ -56,6 +56,8 @@ int seq_open_net(struct inode *ino, struct file *f,
 #ifdef CONFIG_NET_NS
 	p->net_ctx.net = net;
 #endif
+	p->net_ctx.vrf = current->vrf;
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(seq_open_net);
@@ -65,19 +67,32 @@ int single_open_net(struct inode *inode, struct file *file,
 {
 	int err;
 	struct net *net;
+	struct seq_net_private *p;
 
 	err = -ENXIO;
 	net = get_proc_net(inode);
 	if (net == NULL)
 		goto err_net;
 
-	err = single_open(file, show, net);
+	err = -ENOMEM;
+	p = kzalloc(sizeof(*p), GFP_KERNEL);
+	if (p == NULL)
+		goto err_malloc;
+
+#ifdef CONFIG_NET_NS
+	p->net_ctx.net = net;
+#endif
+	p->net_ctx.vrf = current->vrf;
+
+	err = single_open(file, show, p);
 	if (err < 0)
 		goto err_open;
 
 	return 0;
 
 err_open:
+	kfree(p);
+err_malloc:
 	put_net(net);
 err_net:
 	return err;
@@ -99,7 +114,8 @@ EXPORT_SYMBOL_GPL(seq_release_net);
 int single_release_net(struct inode *ino, struct file *f)
 {
 	struct seq_file *seq = f->private_data;
-	put_net(seq->private);
+	put_net(seq_file_net(seq));
+	kfree(seq->private);
 	return single_release(ino, f);
 }
 EXPORT_SYMBOL_GPL(single_release_net);
