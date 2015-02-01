@@ -5882,6 +5882,34 @@ int dev_set_mtu(struct net_device *dev, int new_mtu)
 }
 EXPORT_SYMBOL(dev_set_mtu);
 
+ /**
+  *     dev_set_vrf - Change VRF
+  *     @dev: device
+  *     @new_vrf: new VRF
+  *
+  *     Change the VRF association for the network device.
+  */
+int dev_set_vrf(struct net_device *dev, __u32 new_vrf)
+{
+	if (!netif_device_present(dev))
+		return -ENODEV;
+
+	/* device needs to be taken down to drop routes */
+	if (dev->flags & IFF_UP)
+		return -EINVAL;
+
+	if (!vrf_is_valid(new_vrf))
+		return -EINVAL;
+
+	if (new_vrf == dev->nd_vrf)
+		return 0;
+
+	dev->nd_vrf = new_vrf;
+
+	return 0;
+}
+EXPORT_SYMBOL(dev_set_vrf);
+
 /**
  *	dev_set_group - Change group this device belongs to
  *	@dev: device
