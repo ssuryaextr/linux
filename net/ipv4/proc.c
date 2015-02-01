@@ -51,7 +51,7 @@
  */
 static int sockstat_seq_show(struct seq_file *seq, void *v)
 {
-	struct net *net = seq->private;
+	struct net *net = seq_file_net(seq);
 	unsigned int frag_mem;
 	int orphans, sockets;
 
@@ -319,7 +319,7 @@ static void icmpmsg_put(struct seq_file *seq)
 	int i, count;
 	unsigned short type[PERLINE];
 	unsigned long vals[PERLINE], val;
-	struct net *net = seq->private;
+	struct net *net = seq_file_net(seq);
 
 	count = 0;
 	for (i = 0; i < ICMPMSG_MIB_MAX; i++) {
@@ -341,7 +341,7 @@ static void icmpmsg_put(struct seq_file *seq)
 static void icmp_put(struct seq_file *seq)
 {
 	int i;
-	struct net *net = seq->private;
+	struct net *net = seq_file_net(seq);
 	atomic_long_t *ptr = net->mib.icmpmsg_statistics->mibs;
 
 	seq_puts(seq, "\nIcmp: InMsgs InErrors InCsumErrors");
@@ -371,7 +371,7 @@ static void icmp_put(struct seq_file *seq)
 static int snmp_seq_show(struct seq_file *seq, void *v)
 {
 	int i;
-	struct net *net = seq->private;
+	struct net *net = seq_file_net(seq);
 
 	seq_puts(seq, "Ip: Forwarding DefaultTTL");
 
@@ -455,7 +455,7 @@ static const struct file_operations snmp_seq_fops = {
 static int netstat_seq_show(struct seq_file *seq, void *v)
 {
 	int i;
-	struct net *net = seq->private;
+	struct net *net = seq_file_net(seq);
 
 	seq_puts(seq, "TcpExt:");
 	for (i = 0; snmp4_net_list[i].name != NULL; i++)

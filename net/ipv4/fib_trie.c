@@ -1439,6 +1439,8 @@ found:
 			}
 			if (fi->fib_flags & RTNH_F_DEAD)
 				continue;
+			if (!vrf_eq(fi->fib_net_ctx.vrf, flp->flowi4_vrf))
+				continue;
 			for (nhsel = 0; nhsel < fi->fib_nhs; nhsel++) {
 				const struct fib_nh *nh = &fi->fib_nh[nhsel];
 
@@ -1738,6 +1740,7 @@ static int fn_trie_dump_fa(t_key key, int plen, struct list_head *fah,
 	int i, s_i;
 	struct fib_alias *fa;
 	__be32 xkey = htonl(key);
+	__u32 vrf = skb->sk->sk_vrf;
 
 	s_i = cb->args[5];
 	i = 0;
@@ -1749,6 +1752,10 @@ static int fn_trie_dump_fa(t_key key, int plen, struct list_head *fah,
 			i++;
 			continue;
 		}
+
+		 if (!vrf_eq(fa->fa_info->fib_net_ctx.vrf, vrf) &&
+		     !vrf_is_any(vrf))
+			continue;
 
 		if (fib_dump_info(skb, NETLINK_CB(cb->skb).portid,
 				  cb->nlh->nlmsg_seq,
@@ -2078,7 +2085,7 @@ static void fib_table_print(struct seq_file *seq, struct fib_table *tb)
 
 static int fib_triestat_seq_show(struct seq_file *seq, void *v)
 {
-	struct net *net = (struct net *)seq->private;
+	struct net *net = seq_file_net(seq);
 	unsigned int h;
 
 	seq_printf(seq,
@@ -2414,11 +2421,12 @@ static int fib_route_seq_show(struct seq_file *seq, void *v)
 {
 	struct tnode *l = v;
 	struct leaf_info *li;
+	struct net_ctx *ctx = seq_file_net_ctx(seq);
 
 	if (v == SEQ_START_TOKEN) {
 		seq_printf(seq, "%-127s\n", "Iface\tDestination\tGateway "
 			   "\tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU"
-			   "\tWindow\tIRTT");
+			   "\tWindow\tIRTT\tvrf");
 		return 0;
 	}
 
@@ -2439,10 +2447,13 @@ static int fib_route_seq_show(struct seq_file *seq, void *v)
 
 			seq_setwidth(seq, 127);
 
+			if (fi && !vrf_eq_or_any(fi->fib_vrf, ctx->vrf))
+				continue;
+
 			if (fi)
 				seq_printf(seq,
 					 "%s\t%08X\t%08X\t%04X\t%d\t%u\t"
-					 "%d\t%08X\t%d\t%u\t%u",
+					 "%d\t%08X\t%d\t%u\t%u\t%u",
 					 fi->fib_dev ? fi->fib_dev->name : "*",
 					 prefix,
 					 fi->fib_nh->nh_gw, flags, 0, 0,
@@ -2451,13 +2462,14 @@ static int fib_route_seq_show(struct seq_file *seq, void *v)
 					 (fi->fib_advmss ?
 					  fi->fib_advmss + 40 : 0),
 					 fi->fib_window,
-					 fi->fib_rtt >> 3);
+					 fi->fib_rtt >> 3,
+					 fi->fib_vrf);
 			else
 				seq_printf(seq,
 					 "*\t%08X\t%08X\t%04X\t%d\t%u\t"
-					 "%d\t%08X\t%d\t%u\t%u",
+					 "%d\t%08X\t%d\t%u\t%u\t%u",
 					 prefix, 0, flags, 0, 0, 0,
-					 mask, 0, 0, 0);
+					 mask, 0, 0, 0, 0);
 
 			seq_pad(seq, '\n');
 		}
