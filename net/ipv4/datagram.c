@@ -30,6 +30,9 @@ int ip4_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	int oif;
 	int err;
 
+	/* connected sockets must have a specific vrf context */
+	if (vrf_is_any(sk->sk_vrf))
+		return -EINVAL;
 
 	if (addr_len < sizeof(*usin))
 		return -EINVAL;

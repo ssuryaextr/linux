@@ -688,7 +688,7 @@ struct net_device *__dev_get_by_name_ctx(struct net_ctx *ctx, const char *name)
 {
 	struct net_device *dev = __dev_get_by_name(ctx->net, name);
 
-	if (dev && !vrf_eq(dev_vrf(dev), ctx->vrf))
+	if (dev && !vrf_eq_or_any(dev_vrf(dev), ctx->vrf))
 		dev = NULL;
 
 	return dev;

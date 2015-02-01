@@ -301,6 +301,10 @@ static int fib_nl_newrule(struct sk_buff *skb, struct nlmsghdr* nlh)
 	if (err < 0)
 		goto errout;
 
+	/* cannot create new rule for any vrf context */
+	if (vrf_is_any(sk_ctx.vrf))
+		goto errout;
+
 	rule = kzalloc(ops->rule_size, GFP_KERNEL);
 	if (rule == NULL) {
 		err = -ENOMEM;

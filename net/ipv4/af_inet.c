@@ -565,6 +565,10 @@ int __inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	int err;
 	long timeo;
 
+	/* sockets must be set into a vrf context to connect */
+	if (vrf_is_any(sk->sk_vrf))
+		return -EINVAL;
+
 	if (addr_len < sizeof(uaddr->sa_family))
 		return -EINVAL;
 

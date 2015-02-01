@@ -442,7 +442,7 @@ struct neighbour *neigh_lookup_nodev(struct neigh_table *tbl,
 	     n != NULL;
 	     n = rcu_dereference_bh(n->next)) {
 		if (!memcmp(n->primary_key, pkey, key_len) &&
-		    dev_net_ctx_eq(n->dev, ctx)) {
+		    dev_net_ctx_eq_any(n->dev, ctx)) {
 			if (!atomic_inc_not_zero(&n->refcnt))
 				n = NULL;
 			NEIGH_CACHE_STAT_INC(tbl, hits);
@@ -2138,7 +2138,7 @@ static int neightbl_dump_info(struct sk_buff *skb, struct netlink_callback *cb)
 		nidx = 0;
 		p = list_next_entry(&tbl->parms, list);
 		list_for_each_entry_from(p, &tbl->parms_list, list) {
-			if (!neigh_parms_net_ctx_eq(p, &ctx))
+			if (!neigh_parms_net_ctx_eq_any(p, &ctx))
 				continue;
 
 			if (nidx < neigh_skip)
@@ -2271,7 +2271,7 @@ static int neigh_dump_table(struct neigh_table *tbl, struct sk_buff *skb,
 		for (n = rcu_dereference_bh(nht->hash_buckets[h]), idx = 0;
 		     n != NULL;
 		     n = rcu_dereference_bh(n->next)) {
-			if (!dev_net_ctx_eq(n->dev, &ctx))
+			if (!dev_net_ctx_eq_any(n->dev, &ctx))
 				continue;
 			if (idx < s_idx)
 				goto next;
@@ -2308,7 +2308,7 @@ static int pneigh_dump_table(struct neigh_table *tbl, struct sk_buff *skb,
 		if (h > s_h)
 			s_idx = 0;
 		for (n = tbl->phash_buckets[h], idx = 0; n; n = n->next) {
-			if (!dev_net_ctx_eq(n->dev, &ctx))
+			if (!dev_net_ctx_eq_any(n->dev, &ctx))
 				continue;
 			if (idx < s_idx)
 				goto next;
@@ -2446,7 +2446,7 @@ static struct neighbour *neigh_get_first(struct seq_file *seq)
 		n = rcu_dereference_bh(nht->hash_buckets[bucket]);
 
 		while (n) {
-			if (!dev_net_ctx_eq(n->dev, ctx))
+			if (!dev_net_ctx_eq_any(n->dev, ctx))
 				goto next;
 			if (state->neigh_sub_iter) {
 				loff_t fakep = 0;
@@ -2489,7 +2489,7 @@ static struct neighbour *neigh_get_next(struct seq_file *seq,
 
 	while (1) {
 		while (n) {
-			if (!dev_net_ctx_eq(n->dev, ctx))
+			if (!dev_net_ctx_eq_any(n->dev, ctx))
 				goto next;
 			if (state->neigh_sub_iter) {
 				void *v = state->neigh_sub_iter(state, n, pos);
@@ -2546,7 +2546,7 @@ static struct pneigh_entry *pneigh_get_first(struct seq_file *seq)
 	state->flags |= NEIGH_SEQ_IS_PNEIGH;
 	for (bucket = 0; bucket <= PNEIGH_HASHMASK; bucket++) {
 		pn = tbl->phash_buckets[bucket];
-		while (pn && !pneigh_net_ctx_eq(pn, ctx))
+		while (pn && !pneigh_net_ctx_eq_any(pn, ctx))
 			pn = pn->next;
 		if (pn)
 			break;
@@ -2566,13 +2566,13 @@ static struct pneigh_entry *pneigh_get_next(struct seq_file *seq,
 
 	do {
 		pn = pn->next;
-	} while (pn && !pneigh_net_ctx_eq(pn, ctx));
+	} while (pn && !pneigh_net_ctx_eq_any(pn, ctx));
 
 	while (!pn) {
 		if (++state->bucket > PNEIGH_HASHMASK)
 			break;
 		pn = tbl->phash_buckets[state->bucket];
-		while (pn && !pneigh_net_ctx_eq(pn, ctx))
+		while (pn && !pneigh_net_ctx_eq_any(pn, ctx))
 			pn = pn->next;
 		if (pn)
 			break;

@@ -904,6 +904,10 @@ int udp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	if (len > 0xFFFF)
 		return -EMSGSIZE;
 
+	/* out vrf cannot be set to VRF_ANY */
+	if (vrf_is_any(sk_ctx.vrf))
+		return -EINVAL;
+
 	/*
 	 *	Check the flags.
 	 */

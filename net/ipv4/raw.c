@@ -591,6 +591,11 @@ static int raw_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	} else if (!ipc.oif)
 		ipc.oif = inet->uc_index;
 
+	/* out vrf cannot be set to VRF_ANY */
+	err = -EINVAL;
+	if (vrf_is_any(sk_ctx.vrf))
+		goto done;
+
 	flowi4_init_output(&fl4, sk_ctx.vrf, ipc.oif, sk->sk_mark, tos,
 			   RT_SCOPE_UNIVERSE,
 			   inet->hdrincl ? IPPROTO_RAW : sk->sk_protocol,
@@ -689,6 +694,10 @@ static int raw_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	int ret = -EINVAL;
 	int chk_addr_ret;
 	struct net_ctx sk_ctx = SOCK_NET_CTX(sk);
+
+	/* any vrf socket cannot bind to an address or device */
+	if (vrf_is_any(sk->sk_vrf))
+		goto out;
 
 	if (sk->sk_state != TCP_CLOSE || addr_len < sizeof(struct sockaddr_in))
 		goto out;

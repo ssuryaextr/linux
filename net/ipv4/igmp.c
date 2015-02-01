@@ -2451,7 +2451,7 @@ static inline struct ip_mc_list *igmp_mc_get_first(struct seq_file *seq)
 	for_each_netdev_rcu(net, state->dev) {
 		struct in_device *in_dev;
 
-		if (!vrf_eq(dev_vrf(state->dev), ctx->vrf))
+		if (!vrf_eq_or_any(dev_vrf(state->dev), ctx->vrf))
 			continue;
 
 		in_dev = __in_dev_get_rcu(state->dev);
@@ -2600,7 +2600,7 @@ static inline struct ip_sf_list *igmp_mcf_get_first(struct seq_file *seq)
 	for_each_netdev_rcu(net, state->dev) {
 		struct in_device *idev;
 
-		if (!vrf_eq(dev_vrf(state->dev), ctx->vrf))
+		if (!vrf_eq_or_any(dev_vrf(state->dev), ctx->vrf))
 			continue;
 
 		idev = __in_dev_get_rcu(state->dev);

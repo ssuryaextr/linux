@@ -942,6 +942,9 @@ int devinet_ioctl(struct net_ctx *net_ctx, unsigned int cmd, void __user *arg)
 		ret = -EINVAL;
 		if (sin->sin_family != AF_INET)
 			goto out;
+		/* cannot use vrf any for set */
+		if (vrf_is_any(net_ctx->vrf))
+			goto out;
 		break;
 	default:
 		ret = -EINVAL;
@@ -1566,7 +1569,7 @@ static int inet_dump_ifaddr(struct sk_buff *skb, struct netlink_callback *cb)
 				goto cont;
 			if (h > s_h || idx > s_idx)
 				s_ip_idx = 0;
-			if (!vrf_eq(dev_vrf(dev), vrf))
+			if (!vrf_eq_or_any(dev_vrf(dev), vrf))
 				goto cont;
 			in_dev = __in_dev_get_rcu(dev);
 			if (!in_dev)
@@ -1890,7 +1893,7 @@ static int inet_netconf_dump_devconf(struct sk_buff *skb,
 		hlist_for_each_entry_rcu(dev, head, index_hlist) {
 			if (idx < s_idx)
 				goto cont;
-			if (!vrf_eq(dev_vrf(dev), vrf))
+			if (!vrf_eq_or_any(dev_vrf(dev), vrf))
 				goto cont;
 			in_dev = __in_dev_get_rcu(dev);
 			if (!in_dev)

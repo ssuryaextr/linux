@@ -1864,6 +1864,21 @@ int dev_net_ctx_eq(const struct net_device *dev, struct net_ctx *ctx)
 	return 0;
 }
 
+/*
+ * same as above except if ctx has 'any' vrf that it counts as a match
+ * (devices are not assigned to 'any' vrf)
+ */
+static inline
+int dev_net_ctx_eq_any(const struct net_device *dev, struct net_ctx *ctx)
+{
+	if (net_eq(dev_net(dev), ctx->net) &&
+	   (vrf_eq(dev->nd_vrf, ctx->vrf) || vrf_is_any(ctx->vrf))) {
+		return 1;
+	}
+
+	return 0;
+}
+
 static inline bool netdev_uses_dsa(struct net_device *dev)
 {
 #if IS_ENABLED(CONFIG_NET_DSA)

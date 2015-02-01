@@ -1195,6 +1195,9 @@ int arp_ioctl(struct net_ctx *ctx, unsigned int cmd, void __user *arg)
 	case SIOCSARP:
 		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
+		/* must set vrf context to modify arp cache */
+		if (vrf_is_any(ctx->vrf))
+			return -EINVAL;
 	case SIOCGARP:
 		err = copy_from_user(&r, arg, sizeof(struct arpreq));
 		if (err)
@@ -1215,6 +1218,9 @@ int arp_ioctl(struct net_ctx *ctx, unsigned int cmd, void __user *arg)
 							   htonl(0xFFFFFFFFUL);
 	rtnl_lock();
 	if (r.arp_dev[0]) {
+		err = -EINVAL;
+		if (vrf_is_any(ctx->vrf))
+			goto out;
 		err = -ENODEV;
 		dev = __dev_get_by_name_ctx(ctx, r.arp_dev);
 		if (dev == NULL)

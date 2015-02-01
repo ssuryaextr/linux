@@ -2205,7 +2205,7 @@ void sock_net_set(struct sock *sk, struct net *net)
 static inline
 int sock_net_ctx_eq(struct sock *sk, struct net_ctx *ctx)
 {
-	return net_eq(sock_net(sk), ctx->net) && vrf_eq(sk->sk_vrf, ctx->vrf);
+	return net_eq(sock_net(sk), ctx->net) && vrf_eq_or_any(sk->sk_vrf, ctx->vrf);
 }
 
 /*

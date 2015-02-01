@@ -495,6 +495,10 @@ int ip_rt_ioctl(struct net_ctx *ctx, unsigned int cmd, void __user *arg)
 		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
 
+		/* route table can only be manipulated in a vrf context */
+		if (vrf_is_any(ctx->vrf))
+			return -EINVAL;
+
 		if (copy_from_user(&rt, arg, sizeof(rt)))
 			return -EFAULT;
 
