@@ -32,6 +32,7 @@ int fib_default_rule_add(struct fib_rules_ops *ops,
 	r->table = table;
 	r->flags = flags;
 	r->fr_net = hold_net(ops->fro_net);
+	r->fr_vrf = ops->fro_vrf;
 
 	r->suppress_prefixlen = -1;
 	r->suppress_ifgroup = -1;
@@ -137,6 +138,7 @@ fib_rules_register(const struct fib_rules_ops *tmpl, struct net_ctx *ctx)
 
 	INIT_LIST_HEAD(&ops->rules_list);
 	ops->fro_net = ctx->net;
+	ops->fro_vrf = ctx->vrf;
 
 	err = __fib_rules_register(ops);
 	if (err) {
@@ -305,6 +307,7 @@ static int fib_nl_newrule(struct sk_buff *skb, struct nlmsghdr* nlh)
 		goto errout;
 	}
 	rule->fr_net = hold_net(net);
+	rule->fr_vrf = sk_ctx.vrf;
 
 	if (tb[FRA_PRIORITY])
 		rule->pref = nla_get_u32(tb[FRA_PRIORITY]);

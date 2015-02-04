@@ -357,6 +357,7 @@ static int rtentry_to_fib_config(struct net_ctx *ctx, int cmd,
 
 	memset(cfg, 0, sizeof(*cfg));
 	cfg->fc_nlinfo.nl_net = net;
+	cfg->fc_nlinfo.nl_vrf = ctx->vrf;
 
 	if (rt->rt_dst.sa_family != AF_INET)
 		return -EAFNOSUPPORT;
@@ -564,6 +565,7 @@ static int rtm_to_fib_config(struct net_ctx *ctx, struct sk_buff *skb,
 	cfg->fc_nlinfo.portid = NETLINK_CB(skb).portid;
 	cfg->fc_nlinfo.nlh = nlh;
 	cfg->fc_nlinfo.nl_net = ctx->net;
+	cfg->fc_nlinfo.nl_vrf = ctx->vrf;
 
 	if (cfg->fc_type > RTN_MAX) {
 		err = -EINVAL;
@@ -714,6 +716,7 @@ static void fib_magic(int cmd, int type, __be32 dst, int dst_len, struct in_ifad
 		.fc_nlflags = NLM_F_CREATE | NLM_F_APPEND,
 		.fc_nlinfo = {
 			.nl_net = net,
+			.nl_vrf = dev_vrf(ifa->ifa_dev->dev),
 		},
 	};
 

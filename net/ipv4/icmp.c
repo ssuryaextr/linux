@@ -564,6 +564,7 @@ void icmp_send(struct sk_buff *skb_in, int type, int code, __be32 info)
 		goto out;
 	net = dev_net(rt->dst.dev);
 	dev_ctx.net = net;
+	dev_ctx.vrf = dev_vrf(rt->dst.dev);
 
 	/*
 	 *	Find the original header. It is expected to be valid, of course.

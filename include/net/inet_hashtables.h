@@ -95,6 +95,7 @@ static inline
 void ib_net_ctx_set(struct inet_bind_bucket *ib, struct net_ctx *ctx)
 {
 	write_pnet(&ib->ib_net_ctx.net, hold_net(ctx->net));
+	ib->ib_net_ctx.vrf = ctx->vrf;
 }
 
 static inline

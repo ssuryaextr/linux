@@ -1621,6 +1621,7 @@ static int __mkroute_input(struct sk_buff *skb,
 	}
 
 	dev_ctx.net = dev_net(rth->dst.dev);
+	dev_ctx.vrf = dev_vrf(rth->dst.dev);
 	rth->rt_genid = rt_genid_ipv4(&dev_ctx);
 	rth->rt_flags = flags;
 	rth->rt_type = res->type;

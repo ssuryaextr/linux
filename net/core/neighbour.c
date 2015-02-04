@@ -1467,6 +1467,7 @@ struct neigh_parms *neigh_parms_alloc(struct net_device *dev,
 		dev_hold(dev);
 		p->dev = dev;
 		write_pnet(&p->net_ctx.net, hold_net(dev_ctx.net));
+		p->net_ctx.vrf = dev_ctx.vrf;
 		p->sysctl_table = NULL;
 
 		if (ops->ndo_neigh_setup && ops->ndo_neigh_setup(dev, p)) {

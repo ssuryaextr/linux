@@ -819,6 +819,7 @@ struct fib_info *fib_create_info(struct fib_config *cfg)
 		fi->fib_metrics = (u32 *) dst_default_metrics;
 
 	fi->fib_net = hold_net(net);
+	fi->fib_vrf = net_ctx->vrf;
 	fi->fib_protocol = cfg->fc_protocol;
 	fi->fib_scope = cfg->fc_scope;
 	fi->fib_flags = cfg->fc_flags;

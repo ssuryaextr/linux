@@ -2081,6 +2081,7 @@ static int __pim_rcv(struct mr_table *mrt, struct sk_buff *skb,
 	skb->ip_summed = CHECKSUM_NONE;
 
 	dev_ctx.net = dev_net(reg_dev);
+	dev_ctx.vrf = dev_vrf(reg_dev);
 	skb_tunnel_rx(skb, reg_dev, &dev_ctx);
 
 	netif_rx(skb);

@@ -323,6 +323,7 @@ void pneigh_net_ctx_set(struct pneigh_entry *pneigh,
 			const struct net_ctx *net_ctx)
 {
 	write_pnet(&pneigh->net_ctx.net, hold_net(net_ctx->net));
+	pneigh->net_ctx.vrf = net_ctx->vrf;
 }
 static inline
 int pneigh_net_ctx_eq(const struct pneigh_entry *pneigh,
