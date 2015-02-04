@@ -224,6 +224,7 @@ struct nl_info {
 	struct nlmsghdr		*nlh;
 	struct net_ctx		nl_net_ctx;
 #define nl_net  nl_net_ctx.net
+#define nl_vrf nl_net_ctx.vrf
 	u32			portid;
 };
 

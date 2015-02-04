@@ -1699,6 +1699,7 @@ struct net_device {
 
 	struct net_ctx		net_ctx;
 #define nd_net net_ctx.net
+#define nd_vrf net_ctx.vrf
 
 	/* mid-layer private */
 	union {
@@ -1845,7 +1846,13 @@ void dev_net_set(struct net_device *dev, struct net *net)
 }
 
 /* get net_ctx from device */
-#define DEV_NET_CTX(dev)  { .net = dev_net((dev)) }
+#define DEV_NET_CTX(dev)  { .net = dev_net((dev)), .vrf = (dev)->nd_vrf }
+
+static inline
+__u32 dev_vrf(const struct net_device *dev)
+{
+	return dev->nd_vrf;
+}
 
 static inline
 int dev_net_ctx_eq(const struct net_device *dev, struct net_ctx *ctx)

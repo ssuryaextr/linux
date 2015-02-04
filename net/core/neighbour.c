@@ -2855,7 +2855,7 @@ static void neigh_proc_update(struct ctl_table *ctl, int write)
 {
 	struct net_device *dev = ctl->extra1;
 	struct neigh_parms *p = ctl->extra2;
-	struct net_ctx ctx = { .net = neigh_parms_net(p) };
+	struct net_ctx ctx = NEIGH_PARMS_NET_CTX(p);
 	int index = (int *) ctl->data - p->data;
 
 	if (!write)

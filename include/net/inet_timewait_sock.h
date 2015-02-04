@@ -116,6 +116,7 @@ struct inet_timewait_sock {
 #define tw_hash			__tw_common.skc_hash
 #define tw_prot			__tw_common.skc_prot
 #define tw_net			__tw_common.skc_net
+#define tw_vrf			__tw_common.skc_vrf
 #define tw_daddr        	__tw_common.skc_daddr
 #define tw_v6_daddr		__tw_common.skc_v6_daddr
 #define tw_rcv_saddr    	__tw_common.skc_rcv_saddr

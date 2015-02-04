@@ -27,6 +27,7 @@
 #include <net/netns/nftables.h>
 #include <net/netns/xfrm.h>
 #include <linux/ns_common.h>
+#include <net/vrf.h>
 
 struct user_namespace;
 struct proc_dir_entry;
@@ -138,6 +139,7 @@ struct net_ctx {
 #ifdef CONFIG_NET_NS
 	struct net *net;
 #endif
+	__u32 vrf;
 };
 
 #include <linux/seq_file_net.h>
@@ -145,7 +147,7 @@ struct net_ctx {
 /* Init's network namespace */
 extern struct net init_net;
 
-#define INIT_NET_CTX  { .net = &init_net }
+#define INIT_NET_CTX  { .net = &init_net, .vrf = VRF_DEFAULT }
 
 #ifdef CONFIG_NET_NS
 struct net *copy_net_ns(unsigned long flags, struct user_namespace *user_ns,

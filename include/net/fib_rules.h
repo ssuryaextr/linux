@@ -22,6 +22,7 @@ struct fib_rule {
 	struct fib_rule __rcu	*ctarget;
 	struct net_ctx		fr_net_ctx;
 #define fr_net  fr_net_ctx.net
+#define fr_vrf  fr_net_ctx.vrf
 
 	atomic_t		refcnt;
 	u32			pref;
@@ -78,6 +79,7 @@ struct fib_rules_ops {
 	struct module		*owner;
 	struct net_ctx		fro_net_ctx;
 #define fro_net  fro_net_ctx.net
+#define fro_vrf  fro_net_ctx.vrf
 	struct rcu_head		rcu;
 };
 

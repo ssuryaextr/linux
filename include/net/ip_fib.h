@@ -100,6 +100,7 @@ struct fib_info {
 	struct hlist_node	fib_lhash;
 	struct net_ctx		fib_net_ctx;
 #define fib_net  fib_net_ctx.net
+#define fib_vrf  fib_net_ctx.vrf
 	int			fib_treeref;
 	atomic_t		fib_clntref;
 	unsigned int		fib_flags;

@@ -240,6 +240,7 @@ struct ip6_flowlabel {
 	unsigned long		expires;
 	struct net_ctx		fl_net_ctx;
 #define fl_net  fl_net_ctx.net
+#define fl_vrf  fl_net_ctx.vrf
 };
 
 static inline

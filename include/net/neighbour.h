@@ -281,6 +281,15 @@ struct net *neigh_parms_net(const struct neigh_parms *parms)
 }
 
 static inline
+__u32 neigh_parms_vrf(const struct neigh_parms *parms)
+{
+	return parms->net_ctx.vrf;
+}
+
+#define NEIGH_PARMS_NET_CTX(p) \
+		{ .net = neigh_parms_net((p)), .vrf = neigh_parms_vrf((p)) }
+
+static inline
 int neigh_parms_net_ctx_eq(const struct neigh_parms *parms,
 			   const struct net_ctx *net_ctx)
 {
