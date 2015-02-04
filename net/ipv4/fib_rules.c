@@ -331,7 +331,7 @@ int __net_init fib4_rules_init(struct net *net)
 {
 	int err;
 	struct fib_rules_ops *ops;
-	struct net_ctx ctx = { .net = net };
+	struct net_ctx ctx = { .net = net, .vrf = VRF_DEFAULT };
 
 	ops = fib_rules_register(&fib4_rules_ops_template, &ctx);
 	if (IS_ERR(ops))

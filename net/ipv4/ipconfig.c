@@ -329,7 +329,7 @@ set_sockaddr(struct sockaddr_in *sin, __be32 addr, __be16 port)
 
 static int __init ic_devinet_ioctl(unsigned int cmd, struct ifreq *arg)
 {
-	struct net_ctx ctx = { .net = &init_net };
+	struct net_ctx ctx = INIT_NET_CTX;
 	int res;
 
 	mm_segment_t oldfs = get_fs();
@@ -352,7 +352,7 @@ static int __init ic_dev_ioctl(unsigned int cmd, struct ifreq *arg)
 
 static int __init ic_route_ioctl(unsigned int cmd, struct rtentry *arg)
 {
-	struct net_ctx ctx = { .net = &init_net };
+	struct net_ctx ctx = INIT_NET_CTX;
 	int res;
 
 	mm_segment_t oldfs = get_fs();

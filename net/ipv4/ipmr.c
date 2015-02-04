@@ -244,7 +244,7 @@ static const struct fib_rules_ops __net_initconst ipmr_rules_ops_template = {
 
 static int __net_init ipmr_rules_init(struct net *net)
 {
-	struct net_ctx ctx = { .net = net };
+	struct net_ctx ctx = { .net = net, .vrf = VRF_DEFAULT };
 	struct fib_rules_ops *ops;
 	struct mr_table *mrt;
 	int err;

@@ -6817,6 +6817,7 @@ struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 	dev_uc_init(dev);
 
 	dev_net_set(dev, &init_net);
+	dev->nd_vrf = VRF_DEFAULT;
 
 	dev->gso_max_size = GSO_MAX_SIZE;
 	dev->gso_max_segs = GSO_MAX_SEGS;
@@ -7078,6 +7079,9 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 
 	/* Actually switch the network namespace */
 	dev_net_set(dev, net);
+
+	/* reset vrf id since we changed namespaces */
+	dev->nd_vrf = VRF_DEFAULT;
 
 	/* If there is an ifindex conflict assign a new one */
 	if (__dev_get_by_index(net, dev->ifindex)) {
