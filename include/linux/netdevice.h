@@ -1857,11 +1857,9 @@ __u32 dev_vrf(const struct net_device *dev)
 static inline
 int dev_net_ctx_eq(const struct net_device *dev, struct net_ctx *ctx)
 {
-	if (net_eq(dev_net(dev), ctx->net) &&
-	    vrf_eq(dev_vrf(dev), ctx->vrf))
-		return 1;
+	struct net_ctx dev_ctx = { .net = dev_net(dev), .vrf = dev_vrf(dev) };
 
-	return 0;
+	return net_ctx_eq(&dev_ctx, ctx);
 }
 
 /*
