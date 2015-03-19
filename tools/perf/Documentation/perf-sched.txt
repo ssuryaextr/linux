@@ -78,6 +78,10 @@ TIMEHIST OPTIONS
 --wakeups::
     Show wakeup events.
 
+-M::
+--migrations::
+    Show migration events.
+
 -c::
 --comms=::
     Only show events for given comms (comma separated list)
