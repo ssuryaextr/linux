@@ -109,6 +109,15 @@ TIMEHIST OPTIONS
     Add a visual that better emphasizes activity by cpu. Idle times
     are denoted with 'i'; schedule events with an 's'.
 
+-T::
+--pstree::
+    Show only a parent-child process tree with runtime per task in msec.
+
+-P::
+--with-pstree::
+    Show all scheduling events followed by a parent-child process tree with
+    runtime per task in msec.
+
 SEE ALSO
 --------
 linkperf:perf-record[1]
