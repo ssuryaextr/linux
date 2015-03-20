@@ -881,6 +881,29 @@ static int write_branch_stack(int fd __maybe_unused,
 	return 0;
 }
 
+static int write_ref_time(int fd, struct perf_header *h,
+			  struct perf_evlist *evlist __maybe_unused)
+{
+	u64 tod_ref;
+	size_t sz_nsec = sizeof(h->env.perf_clock_ref);
+	size_t sz_tod  = sizeof(tod_ref);
+	int rc = 0;
+
+	/* write time of day in header as nanoseconds */
+	tod_ref = (u64) h->env.tod_tv_ref.tv_sec * NSEC_PER_SEC +
+		  (u64) h->env.tod_tv_ref.tv_usec * NSEC_PER_USEC;
+
+	if ((write(fd, &h->env.perf_clock_ref, sz_nsec) != (ssize_t) sz_nsec) ||
+	    (write(fd, &tod_ref, sz_tod) != (ssize_t) sz_tod)) {
+		rc = -1;
+		goto out;
+	}
+
+	rc = 0;
+out:
+	return rc;
+}
+
 static void print_hostname(struct perf_header *ph, int fd __maybe_unused,
 			   FILE *fp)
 {
@@ -1222,6 +1245,28 @@ static void print_group_desc(struct perf_header *ph, int fd __maybe_unused,
 			if (--nr == 0)
 				fprintf(fp, "}\n");
 		}
+	}
+}
+
+static void print_ref_time(struct perf_header *ph, int fd __maybe_unused,
+			   FILE *fp)
+{
+	struct tm ltime;
+	char tstr[64], date[64];
+
+	if (ph->env.perf_clock_ref) {
+		if (localtime_r(&ph->env.tod_tv_ref.tv_sec, &ltime) == NULL)
+			snprintf(tstr, sizeof(tstr), "<error>");
+		else {
+			strftime(date, sizeof(date), "%F %T", &ltime);
+			snprintf(tstr, sizeof(tstr), "%s.%06d",
+				 date, (int) ph->env.tod_tv_ref.tv_usec);
+		}
+
+		fprintf(fp, "# reference time: %s = %ld.%06d = %" PRIu64 "\n",
+			tstr, ph->env.tod_tv_ref.tv_sec,
+			(int) ph->env.tod_tv_ref.tv_usec,
+			ph->env.perf_clock_ref);
 	}
 }
 
@@ -1833,6 +1878,42 @@ out_free:
 	return ret;
 }
 
+static int process_ref_time(struct perf_file_section *section __maybe_unused,
+				struct perf_header *ph, int fd,
+				void *data __maybe_unused)
+{
+	u64 tod_ref;
+	size_t sz_nsec = sizeof(ph->env.perf_clock_ref);
+	size_t sz_tod  = sizeof(tod_ref);
+	int rc;
+
+	ph->env.perf_clock_ref = 0;
+	ph->env.tod_tv_ref.tv_sec  = 0;
+	ph->env.tod_tv_ref.tv_usec = 0;
+
+	rc = perf_header__getbuffer64(ph, fd, &ph->env.perf_clock_ref, sz_nsec);
+	if (rc != 0) {
+		pr_debug("Failed to read perf_clock reference time\n");
+		rc = -1;
+		goto out;
+	}
+
+	rc = perf_header__getbuffer64(ph, fd, &tod_ref, sz_tod);
+	if (rc != 0) {
+		pr_debug("Failed to read time-of-day for reference time\n");
+		rc = -1;
+		goto out;
+	}
+
+	ph->env.tod_tv_ref.tv_sec = tod_ref / NSEC_PER_SEC;
+	tod_ref -= ph->env.tod_tv_ref.tv_sec * NSEC_PER_SEC;
+	ph->env.tod_tv_ref.tv_usec = tod_ref / NSEC_PER_USEC;
+
+	rc = 0;
+out:
+	return rc;
+}
+
 struct feature_ops {
 	int (*write)(int fd, struct perf_header *h, struct perf_evlist *evlist);
 	void (*print)(struct perf_header *h, int fd, FILE *fp);
@@ -1873,6 +1954,7 @@ static const struct feature_ops feat_ops[HEADER_LAST_FEATURE] = {
 	FEAT_OPA(HEADER_BRANCH_STACK,	branch_stack),
 	FEAT_OPP(HEADER_PMU_MAPPINGS,	pmu_mappings),
 	FEAT_OPP(HEADER_GROUP_DESC,	group_desc),
+	FEAT_OPP(HEADER_REFERENCE_TIME, ref_time),
 };
 
 struct header_print_data {

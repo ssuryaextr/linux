@@ -30,6 +30,7 @@ enum {
 	HEADER_BRANCH_STACK,
 	HEADER_PMU_MAPPINGS,
 	HEADER_GROUP_DESC,
+	HEADER_REFERENCE_TIME = 31,  /* for internal compatibility */
 	HEADER_LAST_FEATURE,
 	HEADER_FEAT_BITS	= 256,
 };
@@ -87,6 +88,8 @@ struct perf_session_env {
 	char			*sibling_threads;
 	char			*numa_nodes;
 	char			*pmu_mappings;
+	u64			perf_clock_ref;
+	struct timeval		tod_tv_ref;
 };
 
 struct perf_header {
