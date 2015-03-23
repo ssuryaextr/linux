@@ -9,6 +9,8 @@
 #include "debug.h"
 #include "time-utils.h"
 
+#define CLOCK_PERF         14
+
 static struct timeval tv_ref;
 static u64 timestamp_ref;
 
@@ -85,4 +87,43 @@ char *perf_time__str(char *buf, int buflen, u64 timestamp, const char *fmt)
 	}
 
 	return buf;
+}
+
+u64 get_perf_clock(void)
+{
+	struct timespec ts;
+	u64 t = (u64) -1;
+
+	if (clock_gettime(CLOCK_PERF, &ts) == 0)
+		t = ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
+
+	return t;
+}
+
+static int get_reftime_clock(u64 *pclock, struct timeval *tv)
+{
+	int rc = -1;
+
+	if (gettimeofday(tv, NULL) != 0)
+		pr_err("gettimeofday failed. Cannot set reference time.\n");
+
+	else {
+		*pclock = get_perf_clock();
+		if (*pclock == (u64) -1) {
+			static int logit = 1;
+
+			if (logit == 1)
+				pr_err("Failed to get perf_clock timestamp. perf_clock module loaded?\n");
+
+			logit = 0;
+		} else
+			rc = 0;
+	}
+
+	return rc;
+}
+
+int perf_time__get_reftime(u64 *pclock, struct timeval *tv)
+{
+	return get_reftime_clock(pclock, tv);
 }
