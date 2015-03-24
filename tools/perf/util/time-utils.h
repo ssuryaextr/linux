@@ -8,6 +8,7 @@ u64 get_perf_clock(void);
 int perf_time__get_reftime(u64 *pclock, struct timeval *tv);
 
 void perf_time__set_reftime(struct timeval *tv, u64 tref);
+int perf_time__reftime_live(void);
 
 int perf_time__have_reftime(struct perf_session *session);
 

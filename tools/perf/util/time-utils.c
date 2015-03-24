@@ -127,3 +127,17 @@ int perf_time__get_reftime(u64 *pclock, struct timeval *tv)
 {
 	return get_reftime_clock(pclock, tv);
 }
+
+int perf_time__reftime_live(void)
+{
+	int rc = 0;
+	u64 pclock;
+	struct timeval tv;
+
+	if (perf_time__get_reftime(&pclock, &tv) == 0)
+		perf_time__set_reftime(&tv, pclock);
+	else
+		rc = -1;
+
+	return rc;
+}

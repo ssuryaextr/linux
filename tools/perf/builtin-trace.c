@@ -13,6 +13,7 @@
 #include "util/stat.h"
 #include "trace-event.h"
 #include "util/parse-events.h"
+#include "util/time-utils.h"
 
 #include <libaudit.h>
 #include <stdlib.h>
@@ -1246,7 +1247,7 @@ struct trace {
 	} stats;
 	bool			not_ev_qualifier;
 	bool			live;
-	bool			full_time;
+	int			full_time;
 	bool			sched;
 	bool			multiple_threads;
 	bool			summary;
@@ -1365,8 +1366,13 @@ static bool trace__filter_duration(struct trace *trace, double t)
 
 static size_t trace__fprintf_tstamp(struct trace *trace, u64 tstamp, FILE *fp)
 {
-	double ts = (double)(tstamp - trace->base_time) / NSEC_PER_MSEC;
+	double ts;
+	char tstr[64];
 
+	if (trace->full_time > 1)
+		return fprintf(fp, "%s ", perf_time__str(tstr, sizeof(tstr), tstamp, NULL));
+
+	ts = (double)(tstamp - trace->base_time) / NSEC_PER_MSEC;
 	return fprintf(fp, "%10.3f ", ts);
 }
 
@@ -2166,6 +2172,8 @@ static int trace__run(struct trace *trace, int argc, const char **argv)
 	unsigned long before;
 	const bool forks = argc > 0;
 	bool draining = false;
+	bool update_tref = true;
+	u64 next_update = 0;
 
 	trace->live = true;
 
@@ -2253,6 +2261,14 @@ static int trace__run(struct trace *trace, int argc, const char **argv)
 again:
 	before = trace->nr_events;
 
+	if ((trace->full_time > 1) && update_tref) {
+		update_tref = false;
+		if (perf_time__reftime_live() != 0) {
+			pr_debug("Failed to set reference time. Time stamps will be perf_clock\n");
+			trace->full_time = 1;
+		}
+	}
+
 	for (i = 0; i < evlist->nr_mmaps; i++) {
 		union perf_event *event;
 
@@ -2265,6 +2281,12 @@ again:
 			if (err) {
 				fprintf(trace->output, "Can't parse sample, err = %d, skipping...\n", err);
 				goto next_event;
+			}
+
+			/* update the reference time every so often */
+			if (sample.time > next_update) {
+				update_tref = true;
+				next_update = sample.time + NSEC_PER_SEC*100;
 			}
 
 			trace__handle_event(trace, event, &sample);
@@ -2426,6 +2448,11 @@ static int trace__replay(struct trace *trace)
 		goto out;
 
 	setup_pager();
+
+	if ((trace->full_time > 1) && (perf_time__have_reftime(session) != 0)) {
+		pr_info("No reference time. Time stamps will be perf_clock\n");
+		trace->full_time = 1;
+	}
 
 	err = perf_session__process_events(session);
 	if (err)
@@ -2692,8 +2719,8 @@ int cmd_trace(int argc, const char **argv, const char *prefix __maybe_unused)
 		     trace__set_duration),
 	OPT_BOOLEAN(0, "sched", &trace.sched, "show blocking scheduler events"),
 	OPT_INCR('v', "verbose", &verbose, "be more verbose"),
-	OPT_BOOLEAN('T', "time", &trace.full_time,
-		    "Show full timestamp, not time relative to first start"),
+	OPT_INCR('T', "time", &trace.full_time,
+		    "Show full timestamp, not time relative to first start. Use twice for time-of-day."),
 	OPT_BOOLEAN('s', "summary", &trace.summary_only,
 		    "Show only syscall summary with statistics"),
 	OPT_BOOLEAN('S', "with-summary", &trace.summary,
