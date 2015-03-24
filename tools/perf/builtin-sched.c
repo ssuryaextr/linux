@@ -14,6 +14,7 @@
 #include "util/stat.h"
 #include "util/strlist.h"
 #include "util/callchain.h"
+#include "util/time-utils.h"
 
 #include "util/parse-options.h"
 #include "util/trace-event.h"
@@ -1714,20 +1715,6 @@ static void timehist_header(struct perf_sched *sched)
 	printf("\n");
 }
 
-static char *timehist_time_str(char *tstr, int len, u64 t)
-{
-	unsigned long secs, usecs;
-	unsigned long long nsecs;
-
-	nsecs = t;
-	secs = nsecs / NSEC_PER_SEC;
-	nsecs -= secs * NSEC_PER_SEC;
-	usecs = nsecs / NSEC_PER_USEC;
-	snprintf(tstr, len, "%5lu.%06lu", secs, usecs);
-
-	return tstr;
-}
-
 static void timehist_print_sample(struct perf_sched *sched,
 				  struct perf_evsel *evsel,
 				  struct perf_sample *sample,
@@ -1738,7 +1725,7 @@ static void timehist_print_sample(struct perf_sched *sched,
 	u32 max_cpus = sched->max_cpu + 1;
 	char tstr[64];
 
-	printf("%15s ", timehist_time_str(tstr, sizeof(tstr), sample->time));
+	printf("%15s ", perf_time__str(tstr, sizeof(tstr), sample->time, NULL));
 
 	printf("[%04d] ", sample->cpu);
 
@@ -2163,7 +2150,7 @@ static void timehist_print_wakeup_event(struct perf_sched *sched,
 		return;
 	}
 
-	printf("%15s ", timehist_time_str(tstr, sizeof(tstr), sample->time));
+	printf("%15s ", perf_time__str(tstr, sizeof(tstr), sample->time, NULL));
 	printf("[%04d] ", sample->cpu);
 	if (sched->show_cpu_visual)
 		printf(" %*s ", sched->max_cpu + 1, "");
@@ -2229,7 +2216,7 @@ static void timehist_print_migration_event(struct perf_sched *sched,
 		return;
 	}
 
-	printf("%15s ", timehist_time_str(tstr, sizeof(tstr), sample->time));
+	printf("%15s ", perf_time__str(tstr, sizeof(tstr), sample->time, NULL));
 	printf("[%04d] ", sample->cpu);
 
 	if (sched->show_cpu_visual) {
@@ -2364,7 +2351,7 @@ static int process_lost(struct perf_tool *tool __maybe_unused,
 {
 	char tstr[64];
 
-	printf("%15s ", timehist_time_str(tstr, sizeof(tstr), sample->time));
+	printf("%15s ", perf_time__str(tstr, sizeof(tstr), sample->time, NULL));
 	printf("lost %" PRIu64 " events on cpu %d\n", event->lost.lost, sample->cpu);
 
 	return 0;
@@ -2649,6 +2636,9 @@ static int perf_sched__timehist(struct perf_sched *sched)
 	evlist = session->evlist;
 
 	symbol__init(&session->header.env);
+
+	if (perf_time__have_reftime(session) != 0)
+		pr_debug("No reference time. Time stamps will be perf_clock\n");
 
 	machines__set_symbol_filter(&session->machines, timehist_symbol_filter);
 
