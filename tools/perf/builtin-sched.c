@@ -189,6 +189,8 @@ struct perf_sched {
 	bool		pstree_only;
 	bool            have_traces;
 	u64		skipped_samples;
+	const char	*time_str;
+	struct perf_time ptime;
 };
 
 /* used in symbol filter */
@@ -1719,13 +1721,14 @@ static void timehist_print_sample(struct perf_sched *sched,
 				  struct perf_evsel *evsel,
 				  struct perf_sample *sample,
 				  struct addr_location *al,
-				  struct thread *thread)
+				  struct thread *thread,
+				  u64 t)
 {
 	struct thread_runtime *tr = thread__priv(thread);
 	u32 max_cpus = sched->max_cpu + 1;
 	char tstr[64];
 
-	printf("%15s ", perf_time__str(tstr, sizeof(tstr), sample->time, NULL));
+	printf("%15s ", perf_time__str(tstr, sizeof(tstr), t, NULL));
 
 	printf("[%04d] ", sample->cpu);
 
@@ -2189,8 +2192,10 @@ static int timehist_sched_wakeup_event(struct perf_tool *tool,
 		tr->ready_to_run = sample->time;
 
 	/* show wakeups if requested */
-	if (sched->show_wakeups)
+	if (sched->show_wakeups &&
+	    !perf_time__skip_sample(&sched->ptime, sample->time)) {
 		timehist_print_wakeup_event(sched, sample, machine, thread);
+	}
 
 	return 0;
 }
@@ -2278,10 +2283,11 @@ static int timehist_sched_change_event(struct perf_tool *tool,
 				       struct machine *machine)
 {
 	struct perf_sched *sched = container_of(tool, struct perf_sched, tool);
+	struct perf_time *ptime = &sched->ptime;
 	struct addr_location al;
 	struct thread *thread;
 	struct thread_runtime *tr = NULL;
-	u64 tprev;
+	u64 tprev, t = sample->time;
 	int rc = 0;
 
 	if (perf_event__preprocess_sample(event, machine, &al, sample) < 0) {
@@ -2308,9 +2314,35 @@ static int timehist_sched_change_event(struct perf_tool *tool,
 
 	tprev = perf_evsel__get_time(evsel, sample->cpu);
 
-	timehist_update_runtime_stats(tr, sample->time, tprev);
+	/*
+	 * If start time given:
+	 * - sample time is under window user cares about - skip sample
+	 * - tprev is under window user cares about  - reset to start of window
+	 */
+	if (ptime->start && ptime->start > t)
+		goto out;
+
+	if (ptime->start > tprev)
+		tprev = ptime->start;
+
+	/*
+	 * If end time given:
+	 * - previous sched event is out of window - we are done
+	 * - sample time is beyond window user cares about - reset it
+	 *   to close out stats for time window interest
+	 */
+	if (ptime->end) {
+		if (tprev > ptime->end)
+			goto out;
+
+		if (t > ptime->end)
+			t = ptime->end;
+	}
+
+	timehist_update_runtime_stats(tr, t, tprev);
+
 	if (!sched->summary_only && !sched->pstree_only)
-		timehist_print_sample(sched, evsel, sample, &al, thread);
+		timehist_print_sample(sched, evsel, sample, &al, thread, t);
 
 out:
 	if (tr) {
@@ -2640,6 +2672,12 @@ static int perf_sched__timehist(struct perf_sched *sched)
 	if (perf_time__have_reftime(session) != 0)
 		pr_debug("No reference time. Time stamps will be perf_clock\n");
 
+	/* needs to be parsed after looking up reference time */
+	if (perf_time__parse_str(&sched->ptime, sched->time_str, NULL) != 0) {
+		pr_err("Invalid time string\n");
+		return -EINVAL;
+	}
+
 	machines__set_symbol_filter(&session->machines, timehist_symbol_filter);
 
 	if (timehist_check_attr(sched, evlist) != 0)
@@ -2940,6 +2978,8 @@ int cmd_sched(int argc, const char **argv, const char *prefix __maybe_unused)
 	OPT_BOOLEAN('V', "cpu-visual", &sched.show_cpu_visual, "Add CPU visual"),
 	OPT_BOOLEAN('T', "pstree", &sched.pstree_only, "Show only parent-child tree"),
 	OPT_BOOLEAN('P', "with-pstree", &sched.pstree, "Show parent-child tree"),
+	OPT_STRING(0, "time", &sched.time_str, "str",
+		   "Time span for analysis (start,stop)"),
 	OPT_END()
 	};
 	const char * const timehist_usage[] = {
