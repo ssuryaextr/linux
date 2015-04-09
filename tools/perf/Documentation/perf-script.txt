@@ -221,6 +221,12 @@ OPTIONS
 --header-only
 	Show only perf.data header.
 
+--time::
+	Only analyze samples within given time window: <start>,<stop>. If times
+	have the format x.y then it is parsed as seconds.microseconds (ie.,
+	perf_clock timestamps). If times have ':' then they are parsed as
+	time-of-day.
+
 SEE ALSO
 --------
 linkperf:perf-record[1], linkperf:perf-script-perl[1],
