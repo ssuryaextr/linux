@@ -16,6 +16,7 @@
 #include "util/evsel.h"
 #include "util/sort.h"
 #include "util/data.h"
+#include "util/time-utils.h"
 #include <linux/bitmap.h>
 
 static char const		*script_name;
@@ -28,6 +29,8 @@ static bool			latency_format;
 static bool			system_wide;
 static const char		*cpu_list;
 static DECLARE_BITMAP(cpu_bitmap, MAX_NR_CPUS);
+static char default_tod_fmt[] = "%H:%M:%S";
+static char *tod_fmt = default_tod_fmt;
 
 enum perf_output_field {
 	PERF_OUTPUT_COMM            = 1U << 0,
@@ -44,6 +47,7 @@ enum perf_output_field {
 	PERF_OUTPUT_SYMOFFSET       = 1U << 11,
 	PERF_OUTPUT_SRCLINE         = 1U << 12,
 	PERF_OUTPUT_PERIOD          = 1U << 13,
+	PERF_OUTPUT_TIMEOFDAY       = 1U << 14,
 };
 
 struct output_option {
@@ -64,6 +68,7 @@ struct output_option {
 	{.str = "symoff", .field = PERF_OUTPUT_SYMOFFSET},
 	{.str = "srcline", .field = PERF_OUTPUT_SRCLINE},
 	{.str = "period", .field = PERF_OUTPUT_PERIOD},
+	{.str = "tod",   .field = PERF_OUTPUT_TIMEOFDAY},
 };
 
 /* default set to maintain compatibility with current format */
@@ -82,7 +87,7 @@ static struct {
 			      PERF_OUTPUT_CPU | PERF_OUTPUT_TIME |
 			      PERF_OUTPUT_EVNAME | PERF_OUTPUT_IP |
 			      PERF_OUTPUT_SYM | PERF_OUTPUT_DSO |
-			      PERF_OUTPUT_PERIOD,
+			      PERF_OUTPUT_PERIOD | PERF_OUTPUT_TIMEOFDAY,
 
 		.invalid_fields = PERF_OUTPUT_TRACE,
 	},
@@ -94,7 +99,7 @@ static struct {
 			      PERF_OUTPUT_CPU | PERF_OUTPUT_TIME |
 			      PERF_OUTPUT_EVNAME | PERF_OUTPUT_IP |
 			      PERF_OUTPUT_SYM | PERF_OUTPUT_DSO |
-			      PERF_OUTPUT_PERIOD,
+			      PERF_OUTPUT_PERIOD | PERF_OUTPUT_TIMEOFDAY,
 
 		.invalid_fields = PERF_OUTPUT_TRACE,
 	},
@@ -104,7 +109,8 @@ static struct {
 
 		.fields = PERF_OUTPUT_COMM | PERF_OUTPUT_TID |
 				  PERF_OUTPUT_CPU | PERF_OUTPUT_TIME |
-				  PERF_OUTPUT_EVNAME | PERF_OUTPUT_TRACE,
+				  PERF_OUTPUT_EVNAME | PERF_OUTPUT_TRACE |
+				  PERF_OUTPUT_TIMEOFDAY | PERF_OUTPUT_TIMEOFDAY,
 	},
 
 	[PERF_TYPE_RAW] = {
@@ -114,7 +120,7 @@ static struct {
 			      PERF_OUTPUT_CPU | PERF_OUTPUT_TIME |
 			      PERF_OUTPUT_EVNAME | PERF_OUTPUT_IP |
 			      PERF_OUTPUT_SYM | PERF_OUTPUT_DSO |
-			      PERF_OUTPUT_PERIOD,
+			      PERF_OUTPUT_PERIOD | PERF_OUTPUT_TIMEOFDAY,
 
 		.invalid_fields = PERF_OUTPUT_TRACE,
 	},
@@ -171,6 +177,33 @@ static int perf_evsel__check_stype(struct perf_evsel *evsel,
 	pr_debug("Samples for '%s' event do not have %s attribute set. "
 		 "Skipping '%s' field.\n",
 		 evname, sample_msg, output_field2str(field));
+
+	return 0;
+}
+
+static int session_has_reftime(struct perf_session *session,
+			struct perf_event_attr *attr)
+{
+	int type = attr->type;
+
+	if (perf_time__have_reftime(session) == 0) {
+		/* if user did not ask for it take out the time field */
+		if (!output[type].user_set)
+			output[type].fields &= ~PERF_OUTPUT_TIME;
+
+		return 0;
+	}
+
+	if ((output[type].user_set) || (tod_fmt != default_tod_fmt)) {
+		pr_err("Reference time not found in session header. "
+		"Cannot print time-of-day field.\n");
+		return -1;
+	}
+
+	/* user did not ask for it explicitly so remove from the default list */
+	output[type].fields &= ~PERF_OUTPUT_TIMEOFDAY;
+	pr_debug("Reference time not found in session header. "
+		 "Cannot print time-of-day field.\n");
 
 	return 0;
 }
@@ -237,6 +270,18 @@ static int perf_evsel__check_attr(struct perf_evsel *evsel,
 		perf_evsel__check_stype(evsel, PERF_SAMPLE_PERIOD, "PERIOD",
 					PERF_OUTPUT_PERIOD))
 		return -EINVAL;
+
+	if (PRINT_FIELD(TIMEOFDAY)) {
+		if (session_has_reftime(session, attr))
+			return -EINVAL;
+
+		if (perf_evsel__check_stype(evsel, PERF_SAMPLE_TIME, "TIME",
+						 PERF_OUTPUT_TIME)) {
+			pr_err("Samples do not contain timestamps.\n");
+			pr_err("Was --tod used with perf-record?\n");
+			return -EINVAL;
+		}
+	}
 
 	return 0;
 }
@@ -343,6 +388,10 @@ static void print_sample_start(struct perf_sample *sample,
 	unsigned long secs;
 	unsigned long usecs;
 	unsigned long long nsecs;
+	char tbuf[64];
+
+	if (PRINT_FIELD(TIMEOFDAY))
+		printf("%s ", perf_time__str(tbuf, sizeof(tbuf), sample->time, tod_fmt));
 
 	if (PRINT_FIELD(COMM)) {
 		if (latency_format)
@@ -1048,6 +1097,50 @@ out:
 	return rc;
 }
 
+static int parse_tod_format(const struct option *opt __maybe_unused,
+			    const char *arg, int unset __maybe_unused)
+{
+	int i;
+	char date[128];
+	size_t rc;
+	struct tm ltime;
+
+	if (strlen(arg) == 0) {
+		pr_debug("Time-of-day format is empty; time will not be printed.\n");
+		goto out;
+	}
+
+	/* test input string for validity and length of output */
+	localtime_r(0, &ltime);
+	rc = strftime(date, sizeof(date), arg, &ltime);
+	if (rc == 0) {
+		fprintf(stderr, "Invalid format string for time-of-day.\n");
+		return -EINVAL;
+	}
+
+out:
+	for (i = 0; i < PERF_TYPE_MAX; ++i) {
+		if (output[i].fields == 0)
+			continue;
+
+		if (strlen(arg))
+			output[i].fields |= PERF_OUTPUT_TIMEOFDAY;
+		else
+			output[i].fields &= ~PERF_OUTPUT_TIMEOFDAY;
+	}
+
+	if (tod_fmt != default_tod_fmt)
+		free(tod_fmt);
+
+	tod_fmt = strdup(arg);
+	if (!tod_fmt) {
+		fprintf(stderr, "Failed to copy time-of-day format string\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
 /* Helper function for filesystems that return a dent->d_type DT_UNKNOWN */
 static int is_directory(const char *base_path, const struct dirent *dent)
 {
@@ -1570,6 +1663,9 @@ int cmd_script(int argc, const char **argv, const char *prefix __maybe_unused)
 	OPT_BOOLEAN('\0', "show-mmap-events", &script.show_mmap_events,
 		    "Show the mmap events"),
 	OPT_BOOLEAN('f', "force", &file.force, "don't complain, do it"),
+	OPT_CALLBACK(0, "tod", NULL, "str",
+		    "Format for time-of-day strings. Option is passed to strftime; microseconds are appended. Default is %H:%M:%S.",
+		    parse_tod_format),
 	OPT_END()
 	};
 	const char * const script_subcommands[] = { "record", "report", NULL };
