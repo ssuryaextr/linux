@@ -45,6 +45,7 @@ struct record {
 	bool			no_buildid;
 	bool			no_buildid_cache;
 	long			samples;
+	bool			want_tod;
 };
 
 static int record__write(struct record *rec, void *bf, size_t size)
@@ -354,6 +355,12 @@ static int __cmd_record(struct record *rec, int argc, const char **argv)
 	rec->session = session;
 
 	record__init_features(rec);
+
+	if (rec->want_tod) {
+		err = perf_session__get_reftime(session);
+		if (err < 0)
+			goto out_delete_session;
+	}
 
 	if (forks) {
 		err = perf_evlist__prepare_workload(rec->evlist, &opts->target,
@@ -929,6 +936,8 @@ struct option __record_options[] = {
 	OPT_CALLBACK('k', "clockid", &record.opts,
 	"clockid", "clockid to use for events, see clock_gettime()",
 	parse_clockid),
+	OPT_BOOLEAN(0, "tod", &record.want_tod,
+		    "Collect data for time-of-day strings"),
 	OPT_END()
 };
 
@@ -1006,6 +1015,9 @@ int cmd_record(int argc, const char **argv, const char *prefix __maybe_unused)
 		err = -EINVAL;
 		goto out_symbol_exit;
 	}
+
+	if (rec->want_tod)
+		rec->opts.sample_time = 1;
 
 	err = __cmd_record(&record, argc, argv);
 out_symbol_exit:

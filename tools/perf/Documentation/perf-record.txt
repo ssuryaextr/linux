@@ -257,6 +257,10 @@ records. See clock_gettime(). In particular CLOCK_MONOTONIC and
 CLOCK_MONOTONIC_RAW are supported, some events might also allow
 CLOCK_BOOTTIME, CLOCK_REALTIME and CLOCK_TAI.
 
+--tod::
+Collect data for displaying time-of-day strings when printing events.
+
+
 SEE ALSO
 --------
 linkperf:perf-stat[1], linkperf:perf-list[1]
