@@ -938,6 +938,10 @@ struct option __record_options[] = {
 	parse_clockid),
 	OPT_BOOLEAN(0, "tod", &record.want_tod,
 		    "Collect data for time-of-day strings"),
+	OPT_BOOLEAN(0, "kernel", &callchain_param.kernel_callstack,
+		    "Collect kernel callchains."),
+	OPT_BOOLEAN(0, "user", &callchain_param.user_callstack,
+		    "Collect user callchains."),
 	OPT_END()
 };
 

@@ -582,6 +582,12 @@ perf_evsel__config_callgraph(struct perf_evsel *evsel,
 		pr_info("Disabling user space callchains for function trace event.\n");
 		attr->exclude_callchain_user = 1;
 	}
+
+	if (callchain_param.kernel_callstack == 0)
+		attr->exclude_callchain_kernel = 1;
+
+	if (callchain_param.user_callstack == 0)
+		attr->exclude_callchain_user = 1;
 }
 
 /*

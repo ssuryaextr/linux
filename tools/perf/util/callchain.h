@@ -65,6 +65,8 @@ struct callchain_param {
 	enum chain_order	order;
 	enum chain_key		key;
 	bool			branch_callstack;
+	bool			kernel_callstack;
+	bool			user_callstack;
 };
 
 extern struct callchain_param callchain_param;
