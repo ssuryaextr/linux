@@ -517,15 +517,49 @@ out:
 	return err;
 }
 
+static int __synthesize_threads_proc(struct perf_tool *tool,
+				     perf_event__handler_t process,
+				     struct machine *machine,
+				     bool mmap_data,
+				     union perf_event *comm_event,
+				     union perf_event *mmap_event,
+				     union perf_event *fork_event)
+{
+	char proc_path[PATH_MAX];
+	DIR *proc;
+	struct dirent dirent, *next;
+
+	snprintf(proc_path, sizeof(proc_path), "%s/proc", machine->root_dir);
+	proc = opendir(proc_path);
+
+	if (proc == NULL)
+		return -errno;
+
+	while (!readdir_r(proc, &dirent, &next) && next) {
+		char *end;
+		pid_t pid = strtol(dirent.d_name, &end, 10);
+
+		if (*end) /* only interested in proper numerical dirents */
+			continue;
+		/*
+ 		 * We may race with exiting thread, so don't stop just because
+ 		 * one thread couldn't be synthesized.
+ 		 */
+		__event__synthesize_thread(comm_event, mmap_event, fork_event, pid,
+					   1, process, tool, machine, mmap_data);
+	}
+
+	closedir(proc);
+
+	return 0;
+}
+
 int perf_event__synthesize_threads(struct perf_tool *tool,
 				   perf_event__handler_t process,
 				   struct machine *machine, bool mmap_data)
 {
-	DIR *proc;
-	char proc_path[PATH_MAX];
-	struct dirent dirent, *next;
 	union perf_event *comm_event, *mmap_event, *fork_event;
-	int err = -1;
+	int err = -ENOMEM;
 
 	if (machine__is_default_guest(machine))
 		return 0;
@@ -542,29 +576,9 @@ int perf_event__synthesize_threads(struct perf_tool *tool,
 	if (fork_event == NULL)
 		goto out_free_mmap;
 
-	snprintf(proc_path, sizeof(proc_path), "%s/proc", machine->root_dir);
-	proc = opendir(proc_path);
+	err = __synthesize_threads_proc(tool, process, machine, mmap_data,
+					comm_event, mmap_event, fork_event);
 
-	if (proc == NULL)
-		goto out_free_fork;
-
-	while (!readdir_r(proc, &dirent, &next) && next) {
-		char *end;
-		pid_t pid = strtol(dirent.d_name, &end, 10);
-
-		if (*end) /* only interested in proper numerical dirents */
-			continue;
-		/*
- 		 * We may race with exiting thread, so don't stop just because
- 		 * one thread couldn't be synthesized.
- 		 */
-		__event__synthesize_thread(comm_event, mmap_event, fork_event, pid,
-					   1, process, tool, machine, mmap_data);
-	}
-
-	err = 0;
-	closedir(proc);
-out_free_fork:
 	free(fork_event);
 out_free_mmap:
 	free(mmap_event);
