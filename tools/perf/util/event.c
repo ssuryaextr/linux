@@ -11,6 +11,23 @@
 #include "thread_map.h"
 #include "symbol/kallsyms.h"
 
+/*
+ * used to pass common arguments through the maze of helper
+ * functions used to synthesize task events
+ */
+
+struct synth_event {
+	struct perf_tool *tool;
+	struct machine *machine;
+
+	union perf_event *comm_event;
+	union perf_event *mmap_event;
+	union perf_event *fork_event;
+
+	perf_event__handler_t process;
+	bool mmap_data;
+};
+
 static const char *perf_event__names[] = {
 	[0]					= "TOTAL",
 	[PERF_RECORD_MMAP]			= "MMAP",
@@ -375,14 +392,16 @@ int perf_event__synthesize_modules(struct perf_tool *tool,
 	return rc;
 }
 
-static int __event__synthesize_thread(union perf_event *comm_event,
-				      union perf_event *mmap_event,
-				      union perf_event *fork_event,
-				      pid_t pid, int full,
-					  perf_event__handler_t process,
-				      struct perf_tool *tool,
-				      struct machine *machine, bool mmap_data)
+static int __event__synthesize_thread(struct synth_event *args,
+				      pid_t pid, int full)
 {
+	struct perf_tool *tool = args->tool;
+	struct machine *machine = args->machine;
+	bool mmap_data = args->mmap_data;
+	perf_event__handler_t process = args->process;
+	union perf_event *comm_event = args->comm_event;
+	union perf_event *mmap_event = args->mmap_event;
+	union perf_event *fork_event = args->fork_event;
 	char filename[PATH_MAX];
 	DIR *tasks;
 	struct dirent dirent, *next;
@@ -455,6 +474,11 @@ int perf_event__synthesize_thread_map(struct perf_tool *tool,
 				      struct machine *machine,
 				      bool mmap_data)
 {
+	struct synth_event args = { .process = process,
+				    .mmap_data = mmap_data,
+				    .machine = machine,
+				    .tool = tool
+				  };
 	union perf_event *comm_event, *mmap_event, *fork_event;
 	int err = -1, thread, j;
 
@@ -470,13 +494,13 @@ int perf_event__synthesize_thread_map(struct perf_tool *tool,
 	if (fork_event == NULL)
 		goto out_free_mmap;
 
+	args.comm_event = comm_event;
+	args.mmap_event = mmap_event;
+	args.fork_event = fork_event;
+
 	err = 0;
 	for (thread = 0; thread < threads->nr; ++thread) {
-		if (__event__synthesize_thread(comm_event, mmap_event,
-					       fork_event,
-					       threads->map[thread], 0,
-					       process, tool, machine,
-					       mmap_data)) {
+		if (__event__synthesize_thread(&args, threads->map[thread], 0)) {
 			err = -1;
 			break;
 		}
@@ -498,11 +522,8 @@ int perf_event__synthesize_thread_map(struct perf_tool *tool,
 
 			/* if not, generate events for it */
 			if (need_leader &&
-			    __event__synthesize_thread(comm_event, mmap_event,
-						       fork_event,
-						       comm_event->comm.pid, 0,
-						       process, tool, machine,
-						       mmap_data)) {
+			    __event__synthesize_thread(&args,
+						       comm_event->comm.pid, 0)) {
 				err = -1;
 				break;
 			}
@@ -517,14 +538,9 @@ out:
 	return err;
 }
 
-static int __synthesize_threads_proc(struct perf_tool *tool,
-				     perf_event__handler_t process,
-				     struct machine *machine,
-				     bool mmap_data,
-				     union perf_event *comm_event,
-				     union perf_event *mmap_event,
-				     union perf_event *fork_event)
+static int __synthesize_threads_proc(struct synth_event *args)
 {
+	struct machine *machine = args->machine;
 	char proc_path[PATH_MAX];
 	DIR *proc;
 	struct dirent dirent, *next;
@@ -545,8 +561,7 @@ static int __synthesize_threads_proc(struct perf_tool *tool,
  		 * We may race with exiting thread, so don't stop just because
  		 * one thread couldn't be synthesized.
  		 */
-		__event__synthesize_thread(comm_event, mmap_event, fork_event, pid,
-					   1, process, tool, machine, mmap_data);
+		__event__synthesize_thread(args, pid, 1);
 	}
 
 	closedir(proc);
@@ -558,6 +573,11 @@ int perf_event__synthesize_threads(struct perf_tool *tool,
 				   perf_event__handler_t process,
 				   struct machine *machine, bool mmap_data)
 {
+	struct synth_event args = { .process = process,
+				    .mmap_data = mmap_data,
+				    .machine = machine,
+				    .tool = tool
+				  };
 	union perf_event *comm_event, *mmap_event, *fork_event;
 	int err = -ENOMEM;
 
@@ -576,8 +596,11 @@ int perf_event__synthesize_threads(struct perf_tool *tool,
 	if (fork_event == NULL)
 		goto out_free_mmap;
 
-	err = __synthesize_threads_proc(tool, process, machine, mmap_data,
-					comm_event, mmap_event, fork_event);
+	args.comm_event = comm_event;
+	args.mmap_event = mmap_event;
+	args.fork_event = fork_event;
+
+	err = __synthesize_threads_proc(&args);
 
 	free(fork_event);
 out_free_mmap:
