@@ -13,8 +13,6 @@
  */
 #define GENLMSG_DATA(glh)	((void *)(NLMSG_DATA(glh) + GENL_HDRLEN))
 #define GENLMSG_PAYLOAD(glh)	(NLMSG_PAYLOAD(glh, 0) - GENL_HDRLEN)
-#define NLA_DATA(na)		((void *)((char *)(na) + NLA_HDRLEN))
-#define NLA_PAYLOAD(len)	(len - NLA_HDRLEN)
 
 #define pr_err(fmt, ...)				\
 		fprintf(stderr, fmt"\n", ##__VA_ARGS__)

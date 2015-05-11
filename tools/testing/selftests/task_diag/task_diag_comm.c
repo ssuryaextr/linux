@@ -40,7 +40,7 @@ static int parse_cmd_new(struct nl_cache_ops *unused, struct genl_cmd *cmd,
 	if (attrs[TASK_DIAG_CRED]) {
 		struct task_diag_creds *creds;
 
-		creds = (struct task_diag_creds *) NLA_DATA(attrs[TASK_DIAG_CRED]);
+		creds = (struct task_diag_creds *) nla_data(attrs[TASK_DIAG_CRED]);
 		pr_info("uid: %d %d %d %d\n", creds->uid,
 				creds->euid, creds->suid, creds->fsuid);
 		pr_info("gid: %d %d %d %d\n", creds->uid,
