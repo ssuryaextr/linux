@@ -26,15 +26,25 @@ static int parse_cmd_new(struct nl_cache_ops *unused, struct genl_cmd *cmd,
 {
 	struct nlattr **attrs;
 	attrs = info->attrs;
+	__u32 *last_pid = (__u32 *)arg, pid;
 
-	pr_info("pid: %d\n", *((int *)nla_data(attrs[TASK_DIAG_PID])));
+	if (arg) {
+		pid = *((__u32 *)nla_data(attrs[TASK_DIAG_PID]));
+
+		if (pid != *last_pid)
+			pr_info("Start getting information about %d\n", pid);
+		else
+			pr_info("Continue getting information about %d\n", pid);
+
+		*last_pid = pid;
+	}
 
 	if (attrs[TASK_DIAG_BASE]) {
 		struct task_diag_base *msg;
 
 		/* For nested attributes, na follows */
 		msg = (struct task_diag_base *) nla_data(attrs[TASK_DIAG_BASE]);
-		pr_info("pid %d ppid %d comm %s\n", msg->pid, msg->ppid, msg->comm);
+		pr_info("pid %d tgid %d ppid %d comm %s\n", msg->pid, msg->tgid, msg->ppid, msg->comm);
 	}
 
 	if (attrs[TASK_DIAG_CRED]) {
@@ -121,5 +131,5 @@ struct genl_ops ops = {
 
 int parse_cb(struct nl_msg *msg, void *arg)
 {
-	return genl_handle_msg(msg, NULL);
+	return genl_handle_msg(msg, arg);
 }

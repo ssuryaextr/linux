@@ -30,6 +30,7 @@ int main(int argc, char *argv[])
 	int id;
 	struct task_diag_pid req;
 	struct nl_msg *msg;
+	__u32 last_pid = 0;
 	void *hdr;
 	int err;
 
@@ -50,6 +51,9 @@ int main(int argc, char *argv[])
 			break;
 		case 't':
 			req.dump_strategy = TASK_DIAG_DUMP_THREAD;
+			break;
+		case 'o':
+			req.dump_strategy = TASK_DIAG_DUMP_ONE;
 			break;
 		case 'a':
 			req.dump_strategy = TASK_DIAG_DUMP_ALL;
@@ -110,7 +114,7 @@ int main(int argc, char *argv[])
 	nlmsg_free(msg);
 
 	err = nl_socket_modify_cb(sock, NL_CB_VALID, NL_CB_CUSTOM,
-			parse_cb, NULL);
+			parse_cb, &last_pid);
 	if (err < 0) {
 		pr_err("Unable to modify valid message callback");
 		goto err;
