@@ -24,13 +24,11 @@ static size_t taskdiag_packet_size(u64 show_flags, int n_vma)
 		size += nla_total_size(sizeof(struct taskstats));
 
 	if (show_flags & TASK_DIAG_SHOW_VMA && n_vma > 0) {
-		size = nla_total_size(sizeof(u32));  /* VMA_SIZE */
-		size += nla_total_size(sizeof(struct task_diag_vma) * n_vma);
 		/*
 		 * 128 is a schwag on average path length for maps; used to
 		 * ballpark initial memory allocation for genl msg
 		 */
-		size += nla_total_size(128 * n_vma);
+		size += nla_total_size(sizeof(struct task_diag_vma) * n_vma + 128);
 	}
 
 	return size;
