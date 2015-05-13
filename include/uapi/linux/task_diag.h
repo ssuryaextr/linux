@@ -155,7 +155,7 @@ static inline struct task_diag_vma_stat *task_diag_vma_stat(struct task_diag_vma
 
 struct task_diag_pid {
 	__u64	show_flags;
-	__u64	dump_stratagy;
+	__u64	dump_strategy;
 
 	__u32	pid;
 };

@@ -528,7 +528,7 @@ static void iter_stop(struct task_iter *iter)
 	if (iter->parent)
 		put_task_struct(iter->parent);
 
-	switch (iter->req.dump_stratagy) {
+	switch (iter->req.dump_strategy) {
 	case TASK_DIAG_DUMP_ALL:
 		task = iter->tgid.task;
 	default:
@@ -548,7 +548,7 @@ static struct task_struct *iter_start(struct task_iter *iter)
 		rcu_read_unlock();
 	}
 
-	switch (iter->req.dump_stratagy) {
+	switch (iter->req.dump_strategy) {
 	case TASK_DIAG_DUMP_ONE:
 		if (iter->parent == NULL)
 			return ERR_PTR(-ESRCH);
@@ -587,7 +587,7 @@ static struct task_struct *iter_start(struct task_iter *iter)
 
 static struct task_struct *iter_next(struct task_iter *iter)
 {
-	switch (iter->req.dump_stratagy) {
+	switch (iter->req.dump_strategy) {
 	case TASK_DIAG_DUMP_ONE:
 		iter->pos++;
 		iter->cb->args[0] = iter->pos;

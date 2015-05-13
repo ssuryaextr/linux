@@ -46,13 +46,13 @@ int main(int argc, char *argv[])
 		req.pid = atoi(argv[2]);
 		switch (argv[1][0]) {
 		case 'c':
-			req.dump_stratagy = TASK_DIAG_DUMP_CHILDREN;
+			req.dump_strategy = TASK_DIAG_DUMP_CHILDREN;
 			break;
 		case 't':
-			req.dump_stratagy = TASK_DIAG_DUMP_THREAD;
+			req.dump_strategy = TASK_DIAG_DUMP_THREAD;
 			break;
 		case 'a':
-			req.dump_stratagy = TASK_DIAG_DUMP_ALL;
+			req.dump_strategy = TASK_DIAG_DUMP_ALL;
 			req.pid = 0;
 			break;
 		default:
