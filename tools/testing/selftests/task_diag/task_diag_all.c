@@ -119,6 +119,12 @@ int main(int argc, char *argv[])
 		pr_err("Unable to modify valid message callback");
 		goto err;
 	}
+	err = nl_socket_modify_cb(sock, NL_CB_FINISH, NL_CB_CUSTOM,
+			parse_cb, &last_pid);
+	if (err < 0) {
+		pr_err("Unable to modify valid message callback");
+		goto err;
+	}
 
 
 	err = nl_recvmsgs_default(sock);

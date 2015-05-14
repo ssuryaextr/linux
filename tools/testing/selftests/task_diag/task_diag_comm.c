@@ -131,5 +131,14 @@ struct genl_ops ops = {
 
 int parse_cb(struct nl_msg *msg, void *arg)
 {
+	struct nlmsghdr *hdr = nlmsg_hdr(msg);
+	if (hdr->nlmsg_type == NLMSG_DONE) {
+		int *ret = nlmsg_data(hdr);
+		if (*ret < 0) {
+			pr_err("An error message is received: %s\n", strerror(-*ret));
+			return *ret;
+		}
+		return 0;
+	}
 	return genl_handle_msg(msg, arg);
 }
