@@ -43,26 +43,26 @@ int main(int argc, char *argv[])
 	}
 
 	req.pid = 0; /* dump all tasks by default */
-	if (argc > 2) {
+	if (argc > 2)
 		req.pid = atoi(argv[2]);
-		switch (argv[1][0]) {
-		case 'c':
-			req.dump_strategy = TASK_DIAG_DUMP_CHILDREN;
-			break;
-		case 't':
-			req.dump_strategy = TASK_DIAG_DUMP_THREAD;
-			break;
-		case 'o':
-			req.dump_strategy = TASK_DIAG_DUMP_ONE;
-			break;
-		case 'a':
-			req.dump_strategy = TASK_DIAG_DUMP_ALL;
-			req.pid = 0;
-			break;
-		default:
-			pr_err("Usage: %s type pid", argv[0]);
-			return 1;
-		}
+
+	switch (argv[1][0]) {
+	case 'c':
+		req.dump_strategy = TASK_DIAG_DUMP_CHILDREN;
+		break;
+	case 't':
+		req.dump_strategy = TASK_DIAG_DUMP_THREAD;
+		break;
+	case 'o':
+		req.dump_strategy = TASK_DIAG_DUMP_ONE;
+		break;
+	case 'a':
+		req.dump_strategy = TASK_DIAG_DUMP_ALL;
+		req.pid = 0;
+		break;
+	default:
+		pr_err("Usage: %s type pid", argv[0]);
+		return 1;
 	}
 
 	sock = nl_socket_alloc();
