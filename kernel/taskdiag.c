@@ -531,6 +531,7 @@ static void iter_stop(struct task_iter *iter)
 	switch (iter->req.dump_strategy) {
 	case TASK_DIAG_DUMP_ALL:
 		task = iter->tgid.task;
+		break;
 	default:
 		task = iter->task;
 	}
