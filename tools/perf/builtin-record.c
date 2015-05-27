@@ -336,6 +336,7 @@ static int __cmd_record(struct record *rec, int argc, const char **argv)
 	struct perf_session *session;
 	bool disabled = false, draining = false;
 	int fd;
+	struct timeval tv_start, tv_end, dt;
 
 	rec->progname = argv[0];
 
@@ -440,8 +441,13 @@ static int __cmd_record(struct record *rec, int argc, const char **argv)
 					 perf_event__synthesize_guest_os, tool);
 	}
 
+gettimeofday(&tv_start, NULL);
 	err = __machine__synthesize_threads(machine, tool, &opts->target, rec->evlist->threads,
 					    process_synthesized_event, opts->sample_address);
+gettimeofday(&tv_end, NULL);
+timersub(&tv_end, &tv_start, &dt);
+pr_info("synthesized threads took %ld.%06d sec\n", dt.tv_sec, (int) dt.tv_usec);
+
 	if (err != 0)
 		goto out_child;
 
@@ -848,6 +854,7 @@ const char record_callchain_help[] = CALLCHAIN_HELP "fp lbr";
  * perf_evlist__prepare_workload, etc instead of fork+exec'in 'perf record',
  * using pipes, etc.
  */
+extern bool have_task_diag;
 struct option __record_options[] = {
 	OPT_CALLBACK('e', "event", &record.evlist, "event",
 		     "event selector. use 'perf list' to list available events",
@@ -929,6 +936,8 @@ struct option __record_options[] = {
 	OPT_CALLBACK('k', "clockid", &record.opts,
 	"clockid", "clockid to use for events, see clock_gettime()",
 	parse_clockid),
+	OPT_BOOLEAN(0, "task_diag", &have_task_diag,
+		    "Use task_diag interface"),
 	OPT_END()
 };
 

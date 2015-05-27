@@ -12,7 +12,7 @@
 #include "symbol/kallsyms.h"
 #include "perf_task_diag.h"
 
-int have_task_diag = 1;
+bool have_task_diag = 1;
 
 static const char *perf_event__names[] = {
 	[0]					= "TOTAL",
