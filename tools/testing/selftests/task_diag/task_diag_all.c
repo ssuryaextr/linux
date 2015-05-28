@@ -60,6 +60,10 @@ int main(int argc, char *argv[])
 		req.dump_strategy = TASK_DIAG_DUMP_ALL;
 		req.pid = 0;
 		break;
+	case 'A':
+		req.dump_strategy = TASK_DIAG_DUMP_ALL_THREAD;
+		req.pid = 0;
+		break;
 	default:
 		pr_err("Usage: %s type pid", argv[0]);
 		return 1;
