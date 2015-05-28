@@ -610,6 +610,12 @@ ifdef LIBBABELTRACE
   endif
 endif
 
+#ifdef GENL
+    CFLAGS += -I/usr/include/libnl3
+    LDFLAGS += $(LIBBABELTRACE_LDFLAGS)
+    EXTLIBS += -lnl-genl-3 -lnl-3
+#endif
+
 # Among the variables below, these:
 #   perfexecdir
 #   template_dir

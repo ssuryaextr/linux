@@ -10,23 +10,9 @@
 #include "thread.h"
 #include "thread_map.h"
 #include "symbol/kallsyms.h"
+#include "perf_task_diag.h"
 
-/*
- * used to pass common arguments through the maze of helper
- * functions used to synthesize task events
- */
-
-struct synth_event {
-	struct perf_tool *tool;
-	struct machine *machine;
-
-	union perf_event *comm_event;
-	union perf_event *mmap_event;
-	union perf_event *fork_event;
-
-	perf_event__handler_t process;
-	bool mmap_data;
-};
+int have_task_diag = 1;
 
 static const char *perf_event__names[] = {
 	[0]					= "TOTAL",
@@ -538,7 +524,7 @@ out:
 	return err;
 }
 
-static int __synthesize_threads_proc(struct synth_event *args)
+static int proc__synthesize_threads(struct synth_event *args)
 {
 	struct machine *machine = args->machine;
 	char proc_path[PATH_MAX];
@@ -600,7 +586,10 @@ int perf_event__synthesize_threads(struct perf_tool *tool,
 	args.mmap_event = mmap_event;
 	args.fork_event = fork_event;
 
-	err = __synthesize_threads_proc(&args);
+	if (have_task_diag)
+		err = task_diag__synthesize_threads(&args);
+	else
+		err = proc__synthesize_threads(&args);
 
 	free(fork_event);
 out_free_mmap:

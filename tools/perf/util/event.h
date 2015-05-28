@@ -307,6 +307,18 @@ typedef int (*perf_event__handler_t)(struct perf_tool *tool,
 				     struct perf_sample *sample,
 				     struct machine *machine);
 
+struct synth_event {
+	struct perf_tool *tool;
+	struct machine *machine;
+
+	union perf_event *comm_event;
+	union perf_event *mmap_event;
+	union perf_event *fork_event;
+
+	perf_event__handler_t process;
+	bool mmap_data;
+};
+
 int perf_event__synthesize_thread_map(struct perf_tool *tool,
 				      struct thread_map *threads,
 				      perf_event__handler_t process,
@@ -391,5 +403,7 @@ size_t perf_event__fprintf(union perf_event *event, FILE *fp);
 
 u64 kallsyms__get_function_start(const char *kallsyms_filename,
 				 const char *symbol_name);
+
+int synthesize_threads__task_diag(struct synth_event *args);
 
 #endif /* __PERF_RECORD_H */
