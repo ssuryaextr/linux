@@ -420,7 +420,7 @@ static int fill_vma(struct task_struct *p, struct sk_buff *skb, struct netlink_c
 	rc = 0;
 	mark = 0;
 out:
-	if (progress)
+	if (*progress)
 		attr->nla_len = skb_tail_pointer(skb) - (unsigned char *) attr;
 
 err:
