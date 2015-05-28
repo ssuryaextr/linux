@@ -236,42 +236,46 @@ static int task_vma_num(struct mm_struct *mm)
 	return n_vma;
 }
 
+/*
+ * use a tmp variable and copy to input arg to deal with
+ * alignment issues. diag_vma contains u64 elements which
+ * means extended load operations can be used and those can
+ * require 8-byte alignment (e.g., sparc)
+ */
 static void fill_diag_vma(struct vm_area_struct *vma,
 			  struct task_diag_vma *diag_vma)
 {
-	unsigned long start, end;
+	struct task_diag_vma tmp;
 
 	/* We don't show the stack guard page in /proc/maps */
-	start = vma->vm_start;
-	if (stack_guard_page_start(vma, start))
-		start += PAGE_SIZE;
+	tmp.start = vma->vm_start;
+	if (stack_guard_page_start(vma, tmp.start))
+		tmp.start += PAGE_SIZE;
 
-	end = vma->vm_end;
-	if (stack_guard_page_end(vma, end))
-		end -= PAGE_SIZE;
-
-	diag_vma->start    = start;
-	diag_vma->end      = end;
-	diag_vma->vm_flags = get_vma_flags(vma);
-	diag_vma->pgoff    = 0;
+	tmp.end = vma->vm_end;
+	if (stack_guard_page_end(vma, tmp.end))
+		tmp.end -= PAGE_SIZE;
+	tmp.vm_flags = get_vma_flags(vma);
 
 	if (vma->vm_file) {
 		struct inode *inode = file_inode(vma->vm_file);
 		dev_t dev;
 
 		dev = inode->i_sb->s_dev;
-		diag_vma->major = MAJOR(dev);
-		diag_vma->minor = MINOR(dev);
-		diag_vma->inode = inode->i_ino;
-		diag_vma->generation = inode->i_generation;
-		diag_vma->pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+		tmp.major = MAJOR(dev);
+		tmp.minor = MINOR(dev);
+		tmp.inode = inode->i_ino;
+		tmp.generation = inode->i_generation;
+		tmp.pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
 	} else {
-		diag_vma->major = 0;
-		diag_vma->minor = 0;
-		diag_vma->inode = 0;
-		diag_vma->generation = 0;
-		diag_vma->pgoff = 0;
+		tmp.major = 0;
+		tmp.minor = 0;
+		tmp.inode = 0;
+		tmp.generation = 0;
+		tmp.pgoff = 0;
 	}
+
+	memcpy(diag_vma, &tmp, sizeof(*diag_vma));
 }
 
 static const char *get_vma_name(struct vm_area_struct *vma, char *page)
@@ -297,6 +301,7 @@ out:
 
 static void fill_diag_vma_stat(struct vm_area_struct *vma, struct task_diag_vma_stat *stat)
 {
+	struct task_diag_vma_stat tmp;
 	struct mem_size_stats mss;
 	struct mm_walk smaps_walk = {
 		.pmd_entry = smaps_pte_range,
@@ -305,18 +310,22 @@ static void fill_diag_vma_stat(struct vm_area_struct *vma, struct task_diag_vma_
 	};
 
 	memset(&mss, 0, sizeof mss);
+	memset(&tmp, 0, sizeof(tmp));
+
 	/* mmap_sem is held in m_start */
 	walk_page_vma(vma, &smaps_walk);
 
-	stat->resident		= mss.resident;
-	stat->pss		= mss.pss;
-	stat->shared_clean	= mss.shared_clean;
-	stat->private_clean	= mss.private_clean;
-	stat->private_dirty	= mss.private_dirty;
-	stat->referenced	= mss.referenced;
-	stat->anonymous		= mss.anonymous;
-	stat->anonymous_thp	= mss.anonymous_thp;
-	stat->swap		= mss.swap;
+	tmp.resident		= mss.resident;
+	tmp.pss			= mss.pss;
+	tmp.shared_clean	= mss.shared_clean;
+	tmp.private_clean	= mss.private_clean;
+	tmp.private_dirty	= mss.private_dirty;
+	tmp.referenced		= mss.referenced;
+	tmp.anonymous		= mss.anonymous;
+	tmp.anonymous_thp	= mss.anonymous_thp;
+	tmp.swap		= mss.swap;
+
+	memcpy(stat, &tmp, sizeof(*stat));
 }
 
 static int fill_vma(struct task_struct *p, struct sk_buff *skb, struct netlink_callback *cb, bool *progress, u64 show_flags)
