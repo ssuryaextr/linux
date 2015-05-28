@@ -330,7 +330,7 @@ static int fill_vma(struct task_struct *p, struct sk_buff *skb, struct netlink_c
 	int i, rc = -EMSGSIZE, size;
 
 	if (cb)
-		mark = cb->args[2];
+		mark = cb->args[3];
 
 	mm = p->mm;
 	if (!mm || !atomic_inc_not_zero(&mm->mm_users))
@@ -428,7 +428,7 @@ err:
 	mmput(mm);
 	free_page((unsigned long) page);
 	if (cb)
-		cb->args[2] = mark;
+		cb->args[3] = mark;
 
 	return rc;
 }
@@ -444,7 +444,7 @@ static int task_diag_fill(struct task_struct *tsk, struct sk_buff *skb,
 	u32 pid;
 
 	if (cb) {
-		n = cb->args[1];
+		n = cb->args[2];
 		flags |= NLM_F_MULTI;
 	}
 
@@ -492,13 +492,13 @@ static int task_diag_fill(struct task_struct *tsk, struct sk_buff *skb,
 
 	genlmsg_end(skb, reply);
 	if (cb)
-		cb->args[1] = 0;
+		cb->args[2] = 0;
 
 	return 0;
 err:
 	if (err == -EMSGSIZE && (i > n || progress)) {
 		if (cb)
-			cb->args[1] = i;
+			cb->args[2] = i;
 		genlmsg_end(skb, reply);
 	} else
 		genlmsg_cancel(skb, reply);
