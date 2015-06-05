@@ -2277,9 +2277,7 @@ static int timehist_migrate_task_event(struct perf_tool *tool,
 
 	tr->migrations++;
 
-	/* show migrations if requested */
-	if (sched->show_migrations)
-		timehist_print_migration_event(sched, evsel, sample, machine, thread);
+	timehist_print_migration_event(sched, evsel, sample, machine, thread);
 
 	return 0;
 }
@@ -3077,6 +3075,8 @@ static int perf_sched__timehist(struct perf_sched *sched)
 		{ "sched:sched_switch",       timehist_sched_switch_event, },
 		{ "sched:sched_wakeup",	      timehist_sched_wakeup_event, },
 		{ "sched:sched_wakeup_new",   timehist_sched_wakeup_event, },
+	};
+	const struct perf_evsel_str_handler migrate_handlers[] = {
 		{ "sched:sched_migrate_task", timehist_migrate_task_event, },
 	};
 	const struct perf_evsel_str_handler hardirq_handlers[] = {
@@ -3158,6 +3158,10 @@ static int perf_sched__timehist(struct perf_sched *sched)
 
 		if (sched->softirq &&
 		    perf_session__set_tracepoints_handlers(session, softirq_handlers))
+			goto out;
+
+		if (sched->show_migrations &&
+		    perf_session__set_tracepoints_handlers(session, migrate_handlers))
 			goto out;
 	}
 
@@ -3455,7 +3459,7 @@ int cmd_sched(int argc, const char **argv, const char *prefix __maybe_unused)
 	OPT_BOOLEAN('w', "wakeups", &sched.show_wakeups, "Show wakeup events"),
 	OPT_BOOLEAN(0, "hardirq", &sched.hardirq, "Show hardirq events if found"),
 	OPT_BOOLEAN(0, "softirq", &sched.softirq, "Show softirq events if found"),
-	OPT_BOOLEAN('M', "migrations", &sched.show_migrations, "Show migration events"),
+	OPT_BOOLEAN('M', "migrations", &sched.show_migrations, "Show migration events if found"),
 	OPT_BOOLEAN('V', "cpu-visual", &sched.show_cpu_visual, "Add CPU visual"),
 	OPT_BOOLEAN('T', "pstree", &sched.pstree_only, "Show only parent-child tree"),
 	OPT_BOOLEAN('P', "with-pstree", &sched.pstree, "Show parent-child tree"),
