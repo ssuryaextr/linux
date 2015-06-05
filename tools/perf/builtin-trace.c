@@ -1233,8 +1233,6 @@ struct trace {
 	unsigned long		nr_events;
 	struct strlist		*ev_qualifier;
 	const char 		*last_vfs_getname;
-	struct intlist		*tid_list;
-	struct intlist		*pid_list;
 	struct {
 		size_t		nr;
 		pid_t		*entries;
@@ -1977,18 +1975,6 @@ static int trace__pgfault(struct trace *trace,
 	return 0;
 }
 
-static bool skip_sample(struct trace *trace, struct perf_sample *sample)
-{
-	if ((trace->pid_list && intlist__find(trace->pid_list, sample->pid)) ||
-	    (trace->tid_list && intlist__find(trace->tid_list, sample->tid)))
-		return false;
-
-	if (trace->pid_list || trace->tid_list)
-		return true;
-
-	return false;
-}
-
 static int trace__process_sample(struct perf_tool *tool,
 				 union perf_event *event,
 				 struct perf_sample *sample,
@@ -1996,11 +1982,13 @@ static int trace__process_sample(struct perf_tool *tool,
 				 struct machine *machine __maybe_unused)
 {
 	struct trace *trace = container_of(tool, struct trace, tool);
+	struct thread *thread;
 	int err = 0;
 
 	tracepoint_handler handler = evsel->handler;
 
-	if (skip_sample(trace, sample))
+	thread = machine__findnew_thread(trace->host, sample->pid, sample->tid);
+	if (thread && thread__is_filtered(thread))
 		return 0;
 
 	if (!trace->full_time && trace->base_time == 0)
@@ -2012,27 +2000,6 @@ static int trace__process_sample(struct perf_tool *tool,
 	}
 
 	return err;
-}
-
-static int parse_target_str(struct trace *trace)
-{
-	if (trace->opts.target.pid) {
-		trace->pid_list = intlist__new(trace->opts.target.pid);
-		if (trace->pid_list == NULL) {
-			pr_err("Error parsing process id string\n");
-			return -EINVAL;
-		}
-	}
-
-	if (trace->opts.target.tid) {
-		trace->tid_list = intlist__new(trace->opts.target.tid);
-		if (trace->tid_list == NULL) {
-			pr_err("Error parsing thread id string\n");
-			return -EINVAL;
-		}
-	}
-
-	return 0;
 }
 
 static int trace__record(struct trace *trace, int argc, const char **argv)
@@ -2400,6 +2367,12 @@ static int trace__replay(struct trace *trace)
 	if (session == NULL)
 		return -1;
 
+	if (trace->opts.target.pid)
+		symbol_conf.pid_list_str = strdup(trace->opts.target.pid);
+
+	if (trace->opts.target.tid)
+		symbol_conf.tid_list_str = strdup(trace->opts.target.tid);
+
 	if (symbol__init(&session->header.env) < 0)
 		goto out;
 
@@ -2442,10 +2415,6 @@ static int trace__replay(struct trace *trace)
 		     evsel->attr.config == PERF_COUNT_SW_PAGE_FAULTS))
 			evsel->handler = trace__pgfault;
 	}
-
-	err = parse_target_str(trace);
-	if (err != 0)
-		goto out;
 
 	setup_pager();
 
