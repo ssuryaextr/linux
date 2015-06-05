@@ -195,6 +195,9 @@ struct perf_sched {
 	struct perf_time ptime;
 };
 
+static const char               *cpu_list;
+static DECLARE_BITMAP(cpu_bitmap, MAX_NR_CPUS);
+
 /* used in symbol filter */
 static const char	*excl_sym_list_str;
 static struct strlist	*excl_sym_list;
@@ -1730,6 +1733,9 @@ static void timehist_print_sample(struct perf_sched *sched,
 	u32 max_cpus = sched->max_cpu + 1;
 	char tstr[64];
 
+	if (cpu_list && !test_bit(sample->cpu, cpu_bitmap))
+		return;
+
 	printf("%15s ", perf_time__str(tstr, sizeof(tstr), t, NULL));
 
 	printf("[%04d] ", sample->cpu);
@@ -2321,6 +2327,15 @@ static void timehist_handle_irq_event(struct perf_sched *sched,
 	irq->t_last = sample->time;
 
 	if (sched->summary_only)
+		return;
+
+	/* user only wants events on a cpu? */
+	if (cpu_list && !test_bit(cpu, cpu_bitmap))
+		return;
+
+	/* no cpu list, but comm/pid/tid filtering? */
+	if (cpu_list == NULL &&
+	    (symbol_conf.comm_list || symbol_conf.pid_list || symbol_conf.tid_list))
 		return;
 
 	printf("%15s ", perf_time__str(tstr, sizeof(tstr), t, NULL));
@@ -3106,6 +3121,12 @@ static int perf_sched__timehist(struct perf_sched *sched)
 	if (session == NULL)
 		return -ENOMEM;
 
+	if (cpu_list) {
+		err = perf_session__cpu_bitmap(session, cpu_list, cpu_bitmap);
+		if (err < 0)
+			goto out;
+	}
+
 	evlist = session->evlist;
 
 	symbol__init(&session->header.env);
@@ -3412,6 +3433,7 @@ int cmd_sched(int argc, const char **argv, const char *prefix __maybe_unused)
 		   "file", "vmlinux pathname"),
 	OPT_STRING(0, "kallsyms", &symbol_conf.kallsyms_name,
 		   "file", "kallsyms pathname"),
+	OPT_STRING('C', "cpu", &cpu_list, "cpu", "list of cpus to profile"),
 	OPT_STRING('c', "comms", &symbol_conf.comm_list_str, "comm[,comm...]",
 		   "only display events for these comms"),
 	OPT_STRING('p', "pid", &symbol_conf.pid_list_str, "pid[,pid...]",
