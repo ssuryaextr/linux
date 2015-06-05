@@ -264,27 +264,57 @@ static struct perf_event_header finished_round_event = {
 	.type = PERF_RECORD_FINISHED_ROUND,
 };
 
+# define timersub_ts(a, b, result)                                            \
+  do {                                                                        \
+    (result)->tv_sec = (a)->tv_sec - (b)->tv_sec;                             \
+    (result)->tv_nsec = (a)->tv_nsec - (b)->tv_nsec;                          \
+    if ((result)->tv_nsec < 0) {                                              \
+      --(result)->tv_sec;                                                     \
+      (result)->tv_nsec += 1000000000;                                        \
+    }                                                                         \
+  } while (0)
+
 static int record__mmap_read_all(struct record *rec)
 {
-	u64 bytes_written = rec->bytes_written;
+	static int round;
 	int i;
 	int rc = 0;
+	u64 bytes_start = rec->bytes_written;
+	u64 bytes_tmp, bytes_mmap, bytes_mmap_max = 0, bytes_total;
+	struct timespec tstart, tend, ts_dt;
+
+	round++;
+	clock_gettime(CLOCK_MONOTONIC, &tstart);
 
 	for (i = 0; i < rec->evlist->nr_mmaps; i++) {
 		if (rec->evlist->mmap[i].base) {
+			bytes_tmp = rec->bytes_written;
 			if (record__mmap_read(rec, i) != 0) {
 				rc = -1;
 				goto out;
 			}
+			bytes_mmap = rec->bytes_written - bytes_tmp;
+			//if (bytes_mmap)
+			//      pr_debug("mmap %d, bytes %" PRIu64 "\n", i, bytes_mmap);
+			if (bytes_mmap > bytes_mmap_max)
+				bytes_mmap_max = bytes_mmap;
 		}
 	}
+	bytes_total = rec->bytes_written - bytes_start;
 
 	/*
 	 * Mark the round finished in case we wrote
 	 * at least one event.
 	 */
-	if (bytes_written != rec->bytes_written)
+	if (bytes_total)
 		rc = record__write(rec, &finished_round_event, sizeof(finished_round_event));
+
+	clock_gettime(CLOCK_MONOTONIC, &tend);
+	timersub_ts(&tend, &tstart, &ts_dt);
+
+	if (bytes_total)
+		pr_debug("round %d: total bytes %" PRIu64 ", max mmap bytes %" PRIu64" in %ld.%06ld sec\n",
+			 round, bytes_total, bytes_mmap_max, ts_dt.tv_sec, ts_dt.tv_nsec / 1000);
 
 out:
 	return rc;
@@ -481,18 +511,16 @@ static int __cmd_record(struct record *rec, int argc, const char **argv)
 		usleep(opts->initial_delay * 1000);
 		perf_evlist__enable(rec->evlist);
 	}
-
+pr_info("Ready.\n");
 	for (;;) {
-		int hits = rec->samples;
-
 		if (record__mmap_read_all(rec) < 0) {
 			err = -1;
 			goto out_child;
 		}
 
-		if (hits == rec->samples) {
-			if (done || draining)
-				break;
+		if (done || draining)
+			break;
+
 			err = perf_evlist__poll(rec->evlist, -1);
 			/*
 			 * Propagate error, only if there's any. Ignore positive
@@ -504,7 +532,6 @@ static int __cmd_record(struct record *rec, int argc, const char **argv)
 
 			if (perf_evlist__filter_pollfd(rec->evlist, POLLERR | POLLHUP) == 0)
 				draining = true;
-		}
 
 		/*
 		 * When perf is starting the traced process, at the end events
