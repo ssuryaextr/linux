@@ -1629,8 +1629,7 @@ static void perf_evsel__save_time(struct perf_evsel *evsel,
 			return;
 
 		r->last_time = p;
-		i = r->ncpu ? r->ncpu + 1 : 0;
-		for (; i < n; ++i)
+		for (i = r->ncpu; i < n; ++i)
 			r->last_time[i] = (u64) 0;
 
 		r->ncpu = n;
@@ -1945,8 +1944,7 @@ static struct thread *get_idle_thread(int cpu)
 			return NULL;
 
 		idle_threads = (struct thread **) p;
-		i = idle_max_cpu ? idle_max_cpu + 1 : 0;
-		for (; i < j; ++i)
+		for (i = idle_max_cpu; i < j; ++i)
 			idle_threads[i] = NULL;
 
 		idle_max_cpu = j;
