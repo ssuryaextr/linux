@@ -1583,6 +1583,11 @@ void perf_evsel__print_ip(struct perf_evsel *evsel, struct perf_sample *sample,
 			if (!print_oneline)
 				printf("\n");
 
+			if (symbol_conf.bt_stop_list && node->sym && node->sym->name &&
+			    strlist__has_entry(symbol_conf.bt_stop_list,
+						node->sym->name)) {
+				break;
+			}
 			stack_depth--;
 next:
 			callchain_cursor_advance(&callchain_cursor);

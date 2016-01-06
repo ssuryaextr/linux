@@ -1958,6 +1958,10 @@ int symbol__init(struct perf_session_env *env)
 		       symbol_conf.sym_list_str, "symbol") < 0)
 		goto out_free_tid_list;
 
+	if (setup_list(&symbol_conf.bt_stop_list,
+		       symbol_conf.bt_stop_list_str, "symbol") < 0)
+		goto out_free_sym_list;
+
 	/*
 	 * A path to symbols of "/" is identical to ""
 	 * reset here for simplicity.
@@ -1975,6 +1979,8 @@ int symbol__init(struct perf_session_env *env)
 	symbol_conf.initialized = true;
 	return 0;
 
+out_free_sym_list:
+	strlist__delete(symbol_conf.sym_list);
 out_free_tid_list:
 	intlist__delete(symbol_conf.tid_list);
 out_free_pid_list:
@@ -1990,6 +1996,7 @@ void symbol__exit(void)
 {
 	if (!symbol_conf.initialized)
 		return;
+	strlist__delete(symbol_conf.bt_stop_list);
 	strlist__delete(symbol_conf.sym_list);
 	strlist__delete(symbol_conf.dso_list);
 	strlist__delete(symbol_conf.comm_list);
@@ -1997,5 +2004,6 @@ void symbol__exit(void)
 	intlist__delete(symbol_conf.pid_list);
 	vmlinux_path__exit();
 	symbol_conf.sym_list = symbol_conf.dso_list = symbol_conf.comm_list = NULL;
+	symbol_conf.bt_stop_list = NULL;
 	symbol_conf.initialized = false;
 }
