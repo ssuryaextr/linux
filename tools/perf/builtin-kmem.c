@@ -15,8 +15,9 @@
 #include "util/trace-event.h"
 #include "util/data.h"
 #include "util/cpumap.h"
-
+#include "util/time-utils.h"
 #include "util/debug.h"
+#include "util/callchain.h"
 
 #include <linux/rbtree.h>
 #include <linux/string.h>
@@ -43,6 +44,7 @@ struct alloc_stat {
 	u64	ptr;
 	u64	bytes_req;
 	u64	bytes_alloc;
+	u64	last_alloc;
 	u32	hit;
 	u32	pingpong;
 
@@ -56,8 +58,12 @@ static struct rb_root root_alloc_sorted;
 static struct rb_root root_caller_stat;
 static struct rb_root root_caller_sorted;
 
-static unsigned long total_requested, total_allocated;
+static unsigned long total_requested, total_allocated, total_freed;
 static unsigned long nr_allocs, nr_cross_allocs;
+
+/* filters for controlling start and stop of time of analysis */
+static struct perf_time ptime;
+static const char *start_sym, *stop_sym;
 
 static int insert_alloc_stat(unsigned long call_site, unsigned long ptr,
 			     int bytes_req, int bytes_alloc, int cpu)
@@ -99,6 +105,8 @@ static int insert_alloc_stat(unsigned long call_site, unsigned long ptr,
 	}
 	data->call_site = call_site;
 	data->alloc_cpu = cpu;
+	data->last_alloc = bytes_alloc;
+
 	return 0;
 }
 
@@ -213,9 +221,16 @@ static int perf_evsel__process_free_event(struct perf_evsel *evsel,
 	unsigned long ptr = perf_evsel__intval(evsel, sample, "ptr");
 	struct alloc_stat *s_alloc, *s_caller;
 
-	s_alloc = search_alloc_stat(ptr, 0, &root_alloc_stat, ptr_cmp);
-	if (!s_alloc)
+	if (ptr == 0)
 		return 0;
+
+	s_alloc = search_alloc_stat(ptr, 0, &root_alloc_stat, ptr_cmp);
+	if (!s_alloc) {
+		pr_debug("ptr %lx not found; can not account for freed allocation\n",
+			 ptr);
+		return 0;
+	}
+	total_freed += s_alloc->last_alloc;
 
 	if ((short)sample->cpu != s_alloc->alloc_cpu) {
 		s_alloc->pingpong++;
@@ -469,6 +484,103 @@ static int perf_evsel__process_page_free_event(struct perf_evsel *evsel,
 	return 0;
 }
 
+static int search_callchain(struct perf_evsel *evsel,
+			    struct perf_sample *sample,
+			    struct addr_location *al,
+			    bool *start_present,
+			    bool *stop_present)
+{
+	unsigned int stack_depth = PERF_MAX_STACK_DEPTH;
+	struct callchain_cursor_node *node;
+
+	if (thread__resolve_callchain(al->thread, evsel, sample, NULL,
+				      NULL, PERF_MAX_STACK_DEPTH) != 0) {
+		return -1;
+	}
+
+	callchain_cursor_commit(&callchain_cursor);
+
+	while (stack_depth) {
+		node = callchain_cursor_current(&callchain_cursor);
+		if (!node)
+			break;
+
+		if (!node->sym)
+			goto next;
+
+		if (start_sym && !strcmp(node->sym->name, start_sym))
+			*start_present = true;
+
+		if (stop_sym && !strcmp(node->sym->name, stop_sym))
+			*stop_present = true;
+
+		stack_depth--;
+next:
+		callchain_cursor_advance(&callchain_cursor);
+	}
+
+	return 0;
+}
+
+static bool skip_sample_symbol(struct perf_evsel *evsel,
+			       struct perf_sample *sample,
+			       struct addr_location *al)
+{
+	static bool start_sym_found, stop_sym_found;
+	bool start_present = false, stop_present = false;
+
+	/* no symbols then no skipping */
+	if (!start_sym && !stop_sym)
+		return false;
+
+	/* if we found the stop symbol no need to proceed */
+	if (stop_sym && stop_sym_found)
+		return true;
+
+	/* skip by default -- ie., on failures, don't process */
+	if (search_callchain(evsel, sample, al,
+			     &start_present, &stop_present) != 0)
+		return true;
+
+	if (start_sym && !start_sym_found) {
+		if (start_present) {
+			start_sym_found = true;
+			return false;
+		}
+
+		/* if start symbol given and we have not seen it yet
+		 * skip sample
+		 */
+		return true;
+	}
+	if (stop_sym) {
+		if (stop_present) {
+			stop_sym_found = true;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool perf_kmem__skip_sample(struct perf_evsel *evsel,
+				   struct perf_sample *sample,
+				   struct addr_location *al)
+{
+	/* skip sample based on time? */
+	if (perf_time__skip_sample(&ptime, sample->time))
+		return true;
+
+	if (al->filtered)
+		return true;
+
+	/* skip sample based on symbol? */
+	if (skip_sample_symbol(evsel, sample, al))
+		return true;
+
+	return false;
+}
+
 typedef int (*tracepoint_handler)(struct perf_evsel *evsel,
 				  struct perf_sample *sample);
 
@@ -478,16 +590,17 @@ static int process_sample_event(struct perf_tool *tool __maybe_unused,
 				struct perf_evsel *evsel,
 				struct machine *machine)
 {
-	struct thread *thread = machine__findnew_thread(machine, sample->pid,
-							sample->tid);
+	struct addr_location al;
 
-	if (thread == NULL) {
-		pr_debug("problem processing %d event, skipping it.\n",
-			 event->header.type);
+	if (perf_event__preprocess_sample(event, machine, &al, sample) < 0) {
+		pr_err("problem processing %d event, skipping it.\n",
+		       event->header.type);
 		return -1;
 	}
 
-	dump_printf(" ... thread: %s:%d\n", thread__comm_str(thread), thread->tid);
+
+	if (perf_kmem__skip_sample(evsel, sample, &al))
+		return 0;
 
 	if (evsel->handler != NULL) {
 		tracepoint_handler f = evsel->handler;
@@ -617,8 +730,13 @@ static void print_slab_summary(void)
 {
 	printf("\nSUMMARY (SLAB allocator)");
 	printf("\n========================\n");
-	printf("Total bytes requested: %'lu\n", total_requested);
-	printf("Total bytes allocated: %'lu\n", total_allocated);
+	printf("Total bytes requested:     %'lu\n", total_requested);
+	printf("Total bytes allocated:     %'lu\n", total_allocated);
+	printf("Total bytes freed:         %'lu\n", total_freed);
+	if (total_allocated > total_freed) {
+		printf("Net total bytes allocated: %'lu\n",
+		       total_allocated - total_freed);
+	}
 	printf("Total bytes wasted on internal fragmentation: %'lu\n",
 	       total_allocated - total_requested);
 	printf("Internal fragmentation: %f%%\n",
@@ -1060,6 +1178,88 @@ static int parse_line_opt(const struct option *opt __maybe_unused,
 	return 0;
 }
 
+/* options for controlling analysis window:
+ * - assumes time string by default if it starts with a digit
+ * - prefix of s: for using symbols
+ */
+
+static int parse_time_opt(const struct option *opt __maybe_unused,
+			  const char *_arg, int unset __maybe_unused)
+{
+	char *sep, *start = NULL, *stop = NULL;
+	struct perf_time ptime2 = { .start = 0 };
+	char *arg;
+
+	if (!_arg)
+		return -EINVAL;
+
+	arg = strdup(_arg);
+	if (!arg)
+		return -ENOMEM;
+
+	/* time string */
+	if (!strstr(arg, "s:"))
+		return perf_time__parse_str(&ptime, arg, NULL);
+
+	/* split apart and look at start and stop separately */
+	if (arg[0] != ',')
+		start = arg;
+
+	sep = strchr(arg, ',');
+	if (sep) {
+		*sep = '\0';
+		stop = sep + 1;
+	}
+
+	if (start) {
+		/* string starts with s: it is a symbol */
+		if (start[0] == 's' && start[1] == ':' && start[2] != '\0') {
+			start += 2;
+			start_sym = strdup(start);
+
+		/* else it is a time string */
+		} else if (perf_time__parse_str(&ptime, start, NULL)) {
+			pr_err("Invalid time string. Failed to parse start time\n");
+			return -1;
+		}
+	}
+
+	if (stop) {
+		/* string starts with s: it is a symbol */
+		if (stop[0] == 's' && stop[1] == ':' && stop[2] != '\0') {
+			stop += 2;
+			stop_sym = strdup(stop);
+
+		/* else it is a time string */
+		} else if (perf_time__parse_str(&ptime2, stop, NULL)) {
+			pr_err("Invalid time string. Failed to parse stop time\n");
+			return -1;
+
+		/* perf_time__parse_str given end string which it treats
+		 * as start time; copy to stop time
+		 */
+		} else
+			ptime.end = ptime2.start;
+	}
+
+	if (start_sym)
+		pr_debug("Analysis starts on first occurrence of %s\n",
+			 start_sym);
+	else if (ptime.start)
+		pr_debug("Analysis starts at perf_clock time %" PRIu64 "\n",
+			 ptime.start);
+
+	if (stop_sym)
+		pr_debug("Analysis stops on first occurrence of %s\n",
+			 stop_sym);
+	else if (ptime.end)
+		pr_debug("Analysis stops at perf_clock time %" PRIu64 "\n",
+			 ptime.end);
+
+	return 0;
+}
+
+
 static int __cmd_record(int argc, const char **argv)
 {
 	const char * const record_args[] = {
@@ -1133,6 +1333,9 @@ int cmd_kmem(int argc, const char **argv, const char *prefix __maybe_unused)
 			   parse_slab_opt),
 	OPT_CALLBACK_NOOPT(0, "page", NULL, NULL, "Analyze page allocator",
 			   parse_page_opt),
+	OPT_CALLBACK(0, "time", NULL, NULL,
+		     "Control analysis start and stop ([start],[stop])",
+		     parse_time_opt),
 	OPT_END()
 	};
 	const char *const kmem_subcommands[] = { "record", "stat", NULL };
