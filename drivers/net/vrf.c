@@ -86,6 +86,10 @@ static int vrf_input6(struct sk_buff *skb)
 {
 	struct net_device *vrf_dev = skb_dst(skb)->dev;
 
+	/* save original ingress device */
+	IP6CB(skb)->iif = skb->skb_iif;
+	IP6CB(skb)->flags |= IP6SKB_L3SLAVE;
+
 	vrf_rx_stats(vrf_dev, skb->len);
 	skb->dev = vrf_dev;
 	skb->skb_iif = vrf_dev->ifindex;
@@ -176,6 +180,9 @@ static int vrf_input(struct sk_buff *skb)
 	struct net_device *vrf_dev = skb_dst(skb)->dev;
 	const struct iphdr *iph = ip_hdr(skb);
 	int err;
+
+	/* save original ingress device */
+	IPCB(skb)->iif = skb->skb_iif;
 
 	vrf_rx_stats(vrf_dev, skb->len);
 	skb->dev = vrf_dev;
