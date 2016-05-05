@@ -60,12 +60,46 @@ struct pcpu_dstats {
 	struct u64_stats_sync	syncp;
 };
 
+static void vrf_rx_stats(struct net_device *dev, int len)
+{
+	struct pcpu_dstats *dstats = this_cpu_ptr(dev->dstats);
+
+	u64_stats_update_begin(&dstats->syncp);
+	dstats->rx_pkts++;
+	dstats->rx_bytes += len;
+	u64_stats_update_end(&dstats->syncp);
+}
+
+static void vrf_rx_error(struct net_device *vrf_dev, struct sk_buff *skb)
+{
+	vrf_dev->stats.rx_errors++;
+	kfree_skb(skb);
+}
+
 /* neighbor handling is done with actual device; do not want
  * to flip skb->dev for those ndisc packets. This really fails
  * for multiple next protocols (e.g., NEXTHDR_HOP). But it is
  * a start.
  */
 #if IS_ENABLED(CONFIG_IPV6)
+static int vrf_input6(struct sk_buff *skb)
+{
+	struct net_device *vrf_dev = skb_dst(skb)->dev;
+
+	vrf_rx_stats(vrf_dev, skb->len);
+	skb->dev = vrf_dev;
+	skb->skb_iif = vrf_dev->ifindex;
+
+	skb_push(skb, skb->mac_len);
+	dev_queue_xmit_nit(skb, vrf_dev);
+	skb_pull(skb, skb->mac_len);
+
+	skb_dst_drop(skb);
+	ip6_route_input(skb);
+
+	return dst_input(skb);
+}
+
 static bool check_ipv6_frame(const struct sk_buff *skb)
 {
 	const struct ipv6hdr *ipv6h;
@@ -99,49 +133,117 @@ static bool check_ipv6_frame(const struct sk_buff *skb)
 out:
 	return rc;
 }
-#else
-static bool check_ipv6_frame(const struct sk_buff *skb)
+
+static rx_handler_result_t vrf_ip6_frame(struct sk_buff *skb,
+					 struct net_device *vrf_dev)
 {
-	return false;
+	struct rt6_info *rt6;
+	struct net *net = dev_net(vrf_dev);
+
+	if (!check_ipv6_frame(skb))
+		goto out;
+
+	rt6 = ip6_dst_alloc(net, vrf_dev,
+			    DST_HOST | DST_NOPOLICY | DST_NOXFRM | DST_NOCACHE);
+	if (!rt6)
+		return RX_HANDLER_CONSUMED;
+
+	rt6->dst.input = vrf_input6;
+	rt6->rt6i_idev = in6_dev_get(vrf_dev);
+
+	dst_hold(&rt6->dst);
+	skb_dst_drop(skb);
+	skb_dst_set(skb, &rt6->dst);
+
+out:
+	return RX_HANDLER_PASS;
+}
+
+#else
+static rx_handler_result_t vrf_ip6_frame(struct sk_buff *skb,
+					 struct net_device *vrf_dev)
+{
+	return RX_HANDLER_PASS;
 }
 #endif
 
-static bool is_ip_rx_frame(struct sk_buff *skb)
+/* ipv4 rx path. switch skb to vrf device, run through packet
+ * taps, then switch dst based on real lookup and continue up
+ * up the stack
+ */
+static int vrf_input(struct sk_buff *skb)
 {
-	switch (skb->protocol) {
-	case htons(ETH_P_IP):
-		return true;
-	case htons(ETH_P_IPV6):
-		return check_ipv6_frame(skb);
-	}
-	return false;
+	struct net_device *vrf_dev = skb_dst(skb)->dev;
+	const struct iphdr *iph = ip_hdr(skb);
+	int err;
+
+	vrf_rx_stats(vrf_dev, skb->len);
+	skb->dev = vrf_dev;
+	skb->skb_iif = vrf_dev->ifindex;
+
+	skb_push(skb, skb->mac_len);
+	dev_queue_xmit_nit(skb, vrf_dev);
+	skb_pull(skb, skb->mac_len);
+
+	err = ip_route_input_noref(skb, iph->daddr, iph->saddr,
+				   iph->tos, vrf_dev);
+	if (unlikely(err))
+		goto drop;
+
+	return dst_input(skb);
+
+drop:
+	vrf_rx_error(vrf_dev, skb);
+	return NET_RX_DROP;
 }
 
-static void vrf_tx_error(struct net_device *vrf_dev, struct sk_buff *skb)
+/* set the input dst to send skb back to us after ip processing */
+static rx_handler_result_t vrf_ip_frame(struct sk_buff *skb,
+					struct net_device *vrf_dev)
 {
-	vrf_dev->stats.tx_errors++;
-	kfree_skb(skb);
+	struct rtable *rth;
+
+	rth = rt_dst_alloc(vrf_dev, 0, RTN_UNICAST, 1, 1, 0);
+	if (!rth)
+		return RX_HANDLER_CONSUMED;
+
+	rth->dst.input = vrf_input;
+
+	/* dst_hold not needed; ipv4 sets initial dst refcnt to 1 */
+	skb_dst_drop(skb);
+	skb_dst_set(skb, &rth->dst);
+
+	return RX_HANDLER_PASS;
 }
 
 /* note: already called with rcu_read_lock */
 static rx_handler_result_t vrf_handle_frame(struct sk_buff **pskb)
 {
 	struct sk_buff *skb = *pskb;
+	struct net_device *vrf_dev = vrf_master_get_rcu(skb->dev);
+	rx_handler_result_t rc = RX_HANDLER_PASS;
 
-	if (is_ip_rx_frame(skb)) {
-		struct net_device *dev = vrf_master_get_rcu(skb->dev);
-		struct pcpu_dstats *dstats = this_cpu_ptr(dev->dstats);
-
-		u64_stats_update_begin(&dstats->syncp);
-		dstats->rx_pkts++;
-		dstats->rx_bytes += skb->len;
-		u64_stats_update_end(&dstats->syncp);
-
-		skb->dev = dev;
-
-		return RX_HANDLER_ANOTHER;
+	switch (skb->protocol) {
+	case htons(ETH_P_IP):
+		rc = vrf_ip_frame(skb, vrf_dev);
+		break;
+	case htons(ETH_P_IPV6):
+		rc = vrf_ip6_frame(skb, vrf_dev);
+		break;
 	}
-	return RX_HANDLER_PASS;
+
+	if (unlikely(rc == RX_HANDLER_CONSUMED)) {
+		vrf_rx_error(vrf_dev, skb);
+		*pskb = NULL;
+	}
+
+	return rc;
+}
+
+static void vrf_tx_error(struct net_device *vrf_dev, struct sk_buff *skb)
+{
+	vrf_dev->stats.tx_errors++;
+	kfree_skb(skb);
 }
 
 static struct rtnl_link_stats64 *vrf_get_stats64(struct net_device *dev,
