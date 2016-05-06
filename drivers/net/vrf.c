@@ -47,6 +47,7 @@
 
 struct net_vrf {
 	struct rtable           *rth;
+	struct rtable           *rth_local;
 	struct rt6_info		*rt6;
 	u32                     tb_id;
 };
@@ -57,6 +58,7 @@ struct pcpu_dstats {
 	u64			tx_drps;
 	u64			rx_pkts;
 	u64			rx_bytes;
+	u64			rx_drps;
 	struct u64_stats_sync	syncp;
 };
 
@@ -281,6 +283,30 @@ static struct rtnl_link_stats64 *vrf_get_stats64(struct net_device *dev,
 	return stats;
 }
 
+/* Local traffic destined to local address. Reinsert the packet to rx
+ * path, similar to loopback handling. Based on loopback_xmit
+ */
+static int vrf_local_xmit(struct sk_buff *skb, struct net_device *dev,
+			  struct dst_entry *dst)
+{
+	int len = skb->len;
+
+	skb_orphan(skb);
+
+	dst_hold(dst);
+	skb_dst_set(skb, dst);
+	skb_dst_force(skb);
+
+	skb->protocol = eth_type_trans(skb, dev);
+
+	if (likely(netif_rx(skb) == NET_RX_SUCCESS))
+		vrf_rx_stats(dev, len);
+	else
+		this_cpu_inc(dev->dstats->rx_drps);
+
+	return NETDEV_TX_OK;
+}
+
 #if IS_ENABLED(CONFIG_IPV6)
 static netdev_tx_t vrf_process_v6_outbound(struct sk_buff *skb,
 					   struct net_device *dev)
@@ -306,6 +332,9 @@ static netdev_tx_t vrf_process_v6_outbound(struct sk_buff *skb,
 	if (dst == dst_null)
 		goto err;
 
+	/* strip the ethernet header added for pass through VRF device */
+	__skb_pull(skb, skb_network_offset(skb));
+
 	skb_dst_drop(skb);
 	skb_dst_set(skb, dst);
 
@@ -329,29 +358,6 @@ static netdev_tx_t vrf_process_v6_outbound(struct sk_buff *skb,
 }
 #endif
 
-static int vrf_send_v4_prep(struct sk_buff *skb, struct flowi4 *fl4,
-			    struct net_device *vrf_dev)
-{
-	struct rtable *rt;
-	int err = 1;
-
-	rt = ip_route_output_flow(dev_net(vrf_dev), fl4, NULL);
-	if (IS_ERR(rt))
-		goto out;
-
-	/* TO-DO: what about broadcast ? */
-	if (rt->rt_type != RTN_UNICAST && rt->rt_type != RTN_LOCAL) {
-		ip_rt_put(rt);
-		goto out;
-	}
-
-	skb_dst_drop(skb);
-	skb_dst_set(skb, &rt->dst);
-	err = 0;
-out:
-	return err;
-}
-
 static netdev_tx_t vrf_process_v4_outbound(struct sk_buff *skb,
 					   struct net_device *vrf_dev)
 {
@@ -366,9 +372,35 @@ static netdev_tx_t vrf_process_v4_outbound(struct sk_buff *skb,
 				FLOWI_FLAG_SKIP_NH_OIF,
 		.daddr = ip4h->daddr,
 	};
+	struct net *net = dev_net(vrf_dev);
+	struct rtable *rt;
 
-	if (vrf_send_v4_prep(skb, &fl4, vrf_dev))
+	rt = ip_route_output_flow(net, &fl4, NULL);
+	if (IS_ERR(rt))
 		goto err;
+
+	if (rt->rt_type != RTN_UNICAST && rt->rt_type != RTN_LOCAL) {
+		ip_rt_put(rt);
+		goto err;
+	}
+
+	skb_dst_drop(skb);
+
+	/* if dst.dev is loopback or the VRF device again this is locally
+	 * originated traffic destined to a local address. Short circuit
+	 * to Rx path using our local dst
+	 */
+	if (rt->dst.dev == net->loopback_dev || rt->dst.dev == vrf_dev) {
+		struct net_vrf *vrf = netdev_priv(vrf_dev);
+
+		ip_rt_put(rt);
+		return vrf_local_xmit(skb, vrf_dev, &vrf->rth_local->dst);
+	}
+
+	skb_dst_set(skb, &rt->dst);
+
+	/* strip the ethernet header added for pass through VRF device */
+	__skb_pull(skb, skb_network_offset(skb));
 
 	if (!ip4h->saddr) {
 		ip4h->saddr = inet_select_addr(skb_dst(skb)->dev, 0,
@@ -390,9 +422,6 @@ err:
 
 static netdev_tx_t is_ip_tx_frame(struct sk_buff *skb, struct net_device *dev)
 {
-	/* strip the ethernet header added for pass through VRF device */
-	__skb_pull(skb, skb_network_offset(skb));
-
 	switch (skb->protocol) {
 	case htons(ETH_P_IP):
 		return vrf_process_v4_outbound(skb, dev);
@@ -566,27 +595,44 @@ static int vrf_output(struct net *net, struct sock *sk, struct sk_buff *skb)
 
 static void vrf_rtable_release(struct net_vrf *vrf)
 {
-	struct dst_entry *dst = (struct dst_entry *)vrf->rth;
+	dst_release(&vrf->rth->dst);
+	dst_release(&vrf->rth_local->dst);
 
-	dst_release(dst);
 	vrf->rth = NULL;
+	vrf->rth_local = NULL;
 }
 
-static struct rtable *vrf_rtable_create(struct net_device *dev)
+static int vrf_rtable_create(struct net_device *dev)
 {
 	struct net_vrf *vrf = netdev_priv(dev);
 	struct rtable *rth;
 
 	if (!fib_new_table(dev_net(dev), vrf->tb_id))
-		return NULL;
+		return -ENOMEM;
 
+	/* create a dst for local ingress routing - packets sent locally
+	 * to local address via the VRF device as a loopback
+	 */
+	rth = rt_dst_alloc(dev, RTCF_LOCAL, RTN_LOCAL, 1, 1, 0);
+	if (!rth)
+		return -ENOMEM;
+
+	rth->rt_table_id = vrf->tb_id;
+	vrf->rth_local = rth;
+
+	/* create a dst for routing packets out through a VRF device */
 	rth = rt_dst_alloc(dev, 0, RTN_UNICAST, 1, 1, 0);
-	if (rth) {
-		rth->dst.output	= vrf_output;
-		rth->rt_table_id = vrf->tb_id;
+	if (!rth) {
+		dst_release(&vrf->rth_local->dst);
+		return -ENOMEM;
 	}
 
-	return rth;
+	rth->dst.output = vrf_output;
+	rth->dst.dev = dev;
+	rth->rt_table_id = vrf->tb_id;
+	vrf->rth = rth;
+
+	return 0;
 }
 
 /**************************** device handling ********************/
@@ -690,8 +736,7 @@ static int vrf_dev_init(struct net_device *dev)
 		goto out_nomem;
 
 	/* create the default dst which points back to us */
-	vrf->rth = vrf_rtable_create(dev);
-	if (!vrf->rth)
+	if (vrf_rtable_create(dev))
 		goto out_stats;
 
 	if (vrf_rt6_create(dev) != 0)
