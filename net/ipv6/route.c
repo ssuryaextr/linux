@@ -1191,7 +1191,7 @@ struct dst_entry *ip6_route_output_flags(struct net *net, const struct sock *sk,
 	struct dst_entry *dst;
 	bool any_src;
 
-	dst = l3mdev_get_rt6_dst(net, fl6);
+	dst = l3mdev_get_rt6_dst(net, fl6, flags);
 	if (dst)
 		return dst;
 

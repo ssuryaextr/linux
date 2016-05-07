@@ -107,7 +107,8 @@ EXPORT_SYMBOL_GPL(l3mdev_fib_table_by_index);
  */
 
 struct dst_entry *l3mdev_get_rt6_dst(struct net *net,
-				     const struct flowi6 *fl6)
+				     const struct flowi6 *fl6,
+				     int flags)
 {
 	struct dst_entry *dst = NULL;
 	struct net_device *dev;
@@ -121,7 +122,8 @@ struct dst_entry *l3mdev_get_rt6_dst(struct net *net,
 
 		if (dev && netif_is_l3_master(dev) &&
 		    dev->l3mdev_ops->l3mdev_get_rt6_dst) {
-			dst = dev->l3mdev_ops->l3mdev_get_rt6_dst(dev, fl6);
+			dst = dev->l3mdev_ops->l3mdev_get_rt6_dst(dev, fl6,
+								  flags);
 		}
 
 		rcu_read_unlock();

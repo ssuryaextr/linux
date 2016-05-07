@@ -880,7 +880,7 @@ static int vrf_get_saddr(struct net_device *dev, struct flowi4 *fl4)
 
 #if IS_ENABLED(CONFIG_IPV6)
 static struct dst_entry *vrf_get_rt6_dst(const struct net_device *dev,
-					 const struct flowi6 *fl6)
+					 const struct flowi6 *fl6, int flags)
 {
 	struct rt6_info *rt = NULL;
 
