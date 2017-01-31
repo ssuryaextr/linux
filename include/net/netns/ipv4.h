@@ -12,6 +12,7 @@
 struct tcpm_hash_bucket;
 struct ctl_table_header;
 struct ipv4_devconf;
+struct fib_ops;
 struct fib_rules_ops;
 struct hlist_head;
 struct fib_table;
@@ -47,6 +48,7 @@ struct netns_ipv4 {
 #endif
 	struct ipv4_devconf	*devconf_all;
 	struct ipv4_devconf	*devconf_dflt;
+	struct fib_ops		*fib_ops;
 #ifdef CONFIG_IP_MULTIPLE_TABLES
 	struct fib_rules_ops	*rules_ops;
 	bool			fib_has_custom_rules;

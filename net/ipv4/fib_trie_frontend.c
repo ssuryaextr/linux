@@ -182,7 +182,7 @@ int fib_unmerge(struct net *net)
 	return 0;
 }
 
-int __net_init fib_trie_net_init(struct net *net)
+static int fib_trie_net_init(struct net *net)
 {
 	int err;
 	size_t size = sizeof(struct hlist_head) * FIB_TABLE_HASHSZ;
@@ -206,7 +206,7 @@ fail:
 	return err;
 }
 
-void fib_trie_net_exit(struct net *net)
+static void fib_trie_net_exit(struct net *net)
 {
 	unsigned int i;
 
@@ -233,3 +233,8 @@ void fib_trie_net_exit(struct net *net)
 	rtnl_unlock();
 	kfree(net->ipv4.fib_table_hash);
 }
+
+struct fib_ops fib_trie_ops = {
+	.net_init = fib_trie_net_init,
+	.net_exit = fib_trie_net_exit,
+};

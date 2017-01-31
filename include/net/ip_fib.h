@@ -161,6 +161,11 @@ struct fib_result_nl {
 	int             err;      
 };
 
+struct fib_ops {
+	int	(*net_init)(struct net *net);
+	void	(*net_exit)(struct net *net);
+};
+
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
 #define FIB_RES_NH(res)		((res).fi->fib_nh[(res).nh_sel])
 #else /* CONFIG_IP_ROUTE_MULTIPATH */

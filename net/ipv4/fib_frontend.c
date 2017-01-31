@@ -49,6 +49,8 @@
 #include <net/lwtunnel.h>
 #include <trace/events/fib.h>
 
+#include "fib_trie.h"
+
 static void fib_flush(struct net *net)
 {
 	int flushed = 0;
@@ -1090,24 +1092,24 @@ static struct notifier_block fib_netdev_notifier = {
 	.notifier_call = fib_netdev_event,
 };
 
-int __net_init fib_trie_net_init(struct net *net);
-void fib_trie_net_exit(struct net *net);
-
 static int __net_init ip_fib_net_init(struct net *net)
 {
 	net->ipv4.fib_seq = 0;
 
-	return fib_trie_net_init(net);
+	return net->ipv4.fib_ops->net_init(net);
 }
 
 static void ip_fib_net_exit(struct net *net)
 {
-	return fib_trie_net_exit(net);
+	return net->ipv4.fib_ops->net_exit(net);
 }
 
 static int __net_init fib_net_init(struct net *net)
 {
 	int error;
+
+	/* install trie ops by default */
+	net->ipv4.fib_ops = &fib_trie_ops;
 
 #ifdef CONFIG_IP_ROUTE_CLASSID
 	net->ipv4.fib_num_tclassid_users = 0;
