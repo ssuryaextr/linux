@@ -45,6 +45,7 @@
 #include <net/lwtunnel.h>
 
 #include "fib_lookup.h"
+#include "fib_trie.h"
 
 static DEFINE_SPINLOCK(fib_info_lock);
 static struct hlist_head *fib_info_hash;
@@ -763,7 +764,7 @@ static int fib_check_nh(struct fib_config *cfg, struct fib_info *fi,
 				fl4.flowi4_scope = RT_SCOPE_LINK;
 
 			if (cfg->fc_table)
-				tbl = fib_get_table(net, cfg->fc_table);
+				tbl = fib_trie_get_table(net, cfg->fc_table);
 
 			if (tbl)
 				err = fib_table_lookup(tbl, &fl4, &res,

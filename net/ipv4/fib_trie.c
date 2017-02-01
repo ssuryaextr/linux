@@ -83,6 +83,7 @@
 #include <net/ip_fib.h>
 #include <trace/events/fib.h>
 #include "fib_lookup.h"
+#include "fib_trie.h"
 
 static unsigned int fib_seq_sum(void)
 {
@@ -2664,7 +2665,7 @@ static void *fib_route_seq_start(struct seq_file *seq, loff_t *pos)
 
 	rcu_read_lock();
 
-	tb = fib_get_table(seq_file_net(seq), RT_TABLE_MAIN);
+	tb = fib_trie_get_table(seq_file_net(seq), RT_TABLE_MAIN);
 	if (!tb)
 		return NULL;
 

@@ -32,6 +32,7 @@
 #include <net/tcp.h>
 #include <net/ip_fib.h>
 #include <net/fib_rules.h>
+#include "fib_trie.h"
 
 struct fib4_rule {
 	struct fib_rule		common;
@@ -99,7 +100,7 @@ static int fib4_rule_action(struct fib_rule *rule, struct flowi *flp,
 	rcu_read_lock();
 
 	tb_id = fib_rule_get_table(rule, arg);
-	tbl = fib_get_table(rule->fr_net, tb_id);
+	tbl = fib_trie_get_table(rule->fr_net, tb_id);
 	if (tbl)
 		err = fib_table_lookup(tbl, &flp->u.ip4,
 				       (struct fib_result *)arg->result,
@@ -159,8 +160,8 @@ static struct fib_table *fib_empty_table(struct net *net)
 	u32 id;
 
 	for (id = 1; id <= RT_TABLE_MAX; id++)
-		if (!fib_get_table(net, id))
-			return fib_new_table(net, id);
+		if (!fib_trie_get_table(net, id))
+			return fib_trie_new_table(net, id);
 	return NULL;
 }
 

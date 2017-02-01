@@ -48,6 +48,7 @@
 #include <net/l3mdev.h>
 #include <net/lwtunnel.h>
 #include <trace/events/fib.h>
+#include "fib_trie.h"
 
 #ifndef CONFIG_IP_MULTIPLE_TABLES
 
@@ -73,16 +74,55 @@ fail:
 	fib_free_table(main_table);
 	return -ENOMEM;
 }
+
+struct fib_table *fib_trie_get_table(struct net *net, u32 id)
+{
+	struct hlist_node *tb_hlist;
+	struct hlist_head *ptr;
+
+	ptr = id == RT_TABLE_LOCAL ?
+		&net->ipv4.fib_table_hash[TABLE_LOCAL_INDEX] :
+		&net->ipv4.fib_table_hash[TABLE_MAIN_INDEX];
+
+	tb_hlist = rcu_dereference_rtnl(hlist_first_rcu(ptr));
+
+	return hlist_entry(tb_hlist, struct fib_table, tb_hlist);
+}
+
+struct fib_table *fib_trie_new_table(struct net *net, u32 id)
+{
+	return fib_trie_get_table(net, id);
+}
+
 #else
 
-struct fib_table *fib_new_table(struct net *net, u32 id)
+/* caller must hold either rtnl or rcu read lock */
+struct fib_table *fib_trie_get_table(struct net *net, u32 id)
+{
+	struct fib_table *tb;
+	struct hlist_head *head;
+	unsigned int h;
+
+	if (id == 0)
+		id = RT_TABLE_MAIN;
+	h = id & (FIB_TABLE_HASHSZ - 1);
+
+	head = &net->ipv4.fib_table_hash[h];
+	hlist_for_each_entry_rcu(tb, head, tb_hlist) {
+		if (tb->tb_id == id)
+			return tb;
+	}
+	return NULL;
+}
+
+struct fib_table *fib_trie_new_table(struct net *net, u32 id)
 {
 	struct fib_table *tb, *alias = NULL;
 	unsigned int h;
 
 	if (id == 0)
 		id = RT_TABLE_MAIN;
-	tb = fib_get_table(net, id);
+	tb = fib_trie_get_table(net, id);
 	if (tb)
 		return tb;
 
@@ -107,26 +147,6 @@ struct fib_table *fib_new_table(struct net *net, u32 id)
 	h = id & (FIB_TABLE_HASHSZ - 1);
 	hlist_add_head_rcu(&tb->tb_hlist, &net->ipv4.fib_table_hash[h]);
 	return tb;
-}
-EXPORT_SYMBOL_GPL(fib_new_table);
-
-/* caller must hold either rtnl or rcu read lock */
-struct fib_table *fib_get_table(struct net *net, u32 id)
-{
-	struct fib_table *tb;
-	struct hlist_head *head;
-	unsigned int h;
-
-	if (id == 0)
-		id = RT_TABLE_MAIN;
-	h = id & (FIB_TABLE_HASHSZ - 1);
-
-	head = &net->ipv4.fib_table_hash[h];
-	hlist_for_each_entry_rcu(tb, head, tb_hlist) {
-		if (tb->tb_id == id)
-			return tb;
-	}
-	return NULL;
 }
 #endif /* CONFIG_IP_MULTIPLE_TABLES */
 
@@ -155,7 +175,7 @@ int fib_unmerge(struct net *net)
 	struct fib_table *old, *new, *main_table;
 
 	/* attempt to fetch local table if it has been allocated */
-	old = fib_get_table(net, RT_TABLE_LOCAL);
+	old = fib_trie_get_table(net, RT_TABLE_LOCAL);
 	if (!old)
 		return 0;
 
@@ -172,7 +192,7 @@ int fib_unmerge(struct net *net)
 	fib_free_table(old);
 
 	/* attempt to fetch main table if it has been allocated */
-	main_table = fib_get_table(net, RT_TABLE_MAIN);
+	main_table = fib_trie_get_table(net, RT_TABLE_MAIN);
 	if (!main_table)
 		return 0;
 
@@ -237,4 +257,7 @@ static void fib_trie_net_exit(struct net *net)
 struct fib_ops fib_trie_ops = {
 	.net_init = fib_trie_net_init,
 	.net_exit = fib_trie_net_exit,
+
+	.new_table = fib_trie_new_table,
+	.get_table = fib_trie_get_table,
 };

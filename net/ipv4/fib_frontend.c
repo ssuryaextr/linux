@@ -478,6 +478,12 @@ int ip_rt_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 	return -EINVAL;
 }
 
+struct fib_table *fib_new_table(struct net *net, u32 id)
+{
+	return net->ipv4.fib_ops->new_table(net, id);
+}
+EXPORT_SYMBOL_GPL(fib_new_table);
+
 const struct nla_policy rtm_ipv4_policy[RTA_MAX + 1] = {
 	[RTA_DST]		= { .type = NLA_U32 },
 	[RTA_SRC]		= { .type = NLA_U32 },

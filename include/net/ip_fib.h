@@ -164,6 +164,9 @@ struct fib_result_nl {
 struct fib_ops {
 	int	(*net_init)(struct net *net);
 	void	(*net_exit)(struct net *net);
+
+	struct fib_table *(*new_table)(struct net *net, u32 id);
+	struct fib_table *(*get_table)(struct net *net, u32 id);
 };
 
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
@@ -252,29 +255,17 @@ struct fib_table *fib_trie_unmerge(struct fib_table *main_tb);
 void fib_table_flush_external(struct fib_table *table);
 void fib_free_table(struct fib_table *tb);
 
+struct fib_table *fib_new_table(struct net *net, u32 id);
+
+static inline struct fib_table *fib_get_table(struct net *net, u32 id)
+{
+	return net->ipv4.fib_ops->get_table(net, id);
+}
+
 #ifndef CONFIG_IP_MULTIPLE_TABLES
 
 #define TABLE_LOCAL_INDEX	(RT_TABLE_LOCAL & (FIB_TABLE_HASHSZ - 1))
 #define TABLE_MAIN_INDEX	(RT_TABLE_MAIN  & (FIB_TABLE_HASHSZ - 1))
-
-static inline struct fib_table *fib_get_table(struct net *net, u32 id)
-{
-	struct hlist_node *tb_hlist;
-	struct hlist_head *ptr;
-
-	ptr = id == RT_TABLE_LOCAL ?
-		&net->ipv4.fib_table_hash[TABLE_LOCAL_INDEX] :
-		&net->ipv4.fib_table_hash[TABLE_MAIN_INDEX];
-
-	tb_hlist = rcu_dereference_rtnl(hlist_first_rcu(ptr));
-
-	return hlist_entry(tb_hlist, struct fib_table, tb_hlist);
-}
-
-static inline struct fib_table *fib_new_table(struct net *net, u32 id)
-{
-	return fib_get_table(net, id);
-}
 
 static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
 			     struct fib_result *res, unsigned int flags)
@@ -299,9 +290,6 @@ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
 #else /* CONFIG_IP_MULTIPLE_TABLES */
 int __net_init fib4_rules_init(struct net *net);
 void __net_exit fib4_rules_exit(struct net *net);
-
-struct fib_table *fib_new_table(struct net *net, u32 id);
-struct fib_table *fib_get_table(struct net *net, u32 id);
 
 int __fib_lookup(struct net *net, struct flowi4 *flp,
 		 struct fib_result *res, unsigned int flags);
