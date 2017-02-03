@@ -443,7 +443,10 @@ struct compat_sock_fprog {
 
 struct sock_fprog_kern {
 	u16			len;
-	struct sock_filter	*filter;
+	union {
+		struct sock_filter	*filter;
+		struct bpf_insn		*insn;
+	};
 };
 
 struct bpf_binary_header {

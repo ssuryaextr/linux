@@ -805,11 +805,43 @@ static void bpf_prog_free_id(struct bpf_prog *prog, bool do_idr_lock)
 		__release(&prog_idr_lock);
 }
 
+static int bpf_prog_store_orig_insn(struct bpf_prog *prog)
+{
+	u32 isize = bpf_prog_insn_size(prog);
+	struct sock_fprog_kern *fkprog;
+
+	prog->orig_prog = kmalloc(sizeof(*fkprog), GFP_KERNEL);
+	if (!prog->orig_prog)
+		return -ENOMEM;
+
+	fkprog = prog->orig_prog;
+	fkprog->len = prog->len;
+
+	fkprog->insn = kmemdup(prog->insnsi, isize, GFP_KERNEL | __GFP_NOWARN);
+	if (!fkprog->insn) {
+		kfree(prog->orig_prog);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void bpf_release_orig_insn(struct bpf_prog *fp)
+{
+	struct sock_fprog_kern *fprog = fp->orig_prog;
+
+	if (fprog) {
+		kfree(fprog->insn);
+		kfree(fprog);
+	}
+}
+
 static void __bpf_prog_put_rcu(struct rcu_head *rcu)
 {
 	struct bpf_prog_aux *aux = container_of(rcu, struct bpf_prog_aux, rcu);
 
 	free_used_maps(aux);
+	bpf_release_orig_insn(aux->prog);
 	bpf_prog_uncharge_memlock(aux->prog);
 	bpf_prog_free(aux->prog);
 }
@@ -1025,6 +1057,10 @@ static int bpf_prog_load(union bpf_attr *attr)
 
 	/* find program type: socket_filter vs tracing_filter */
 	err = find_prog_type(type, prog);
+	if (err < 0)
+		goto free_prog;
+
+	err = bpf_prog_store_orig_insn(prog);
 	if (err < 0)
 		goto free_prog;
 
