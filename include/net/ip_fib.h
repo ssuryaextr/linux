@@ -165,8 +165,15 @@ struct fib_ops {
 	int	(*net_init)(struct net *net);
 	void	(*net_exit)(struct net *net);
 
-	struct fib_table *(*new_table)(struct net *net, u32 id);
-	struct fib_table *(*get_table)(struct net *net, u32 id);
+	struct fib_table *	(*new_table)(struct net *net, u32 id);
+	struct fib_table *	(*get_table)(struct net *net, u32 id);
+
+	int			(*table_insert)(struct net *net,
+						struct fib_table *tb,
+						struct fib_config *cfg);
+	int			(*table_delete)(struct net *net,
+						struct fib_table *tb,
+						struct fib_config *cfg);
 };
 
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
@@ -246,8 +253,17 @@ struct fib_table {
 
 int fib_table_lookup(struct fib_table *tb, const struct flowi4 *flp,
 		     struct fib_result *res, int fib_flags);
-int fib_table_insert(struct net *, struct fib_table *, struct fib_config *);
-int fib_table_delete(struct net *, struct fib_table *, struct fib_config *);
+static inline int fib_table_insert(struct net *net, struct fib_table *tb,
+				   struct fib_config *cfg)
+{
+	return net->ipv4.fib_ops->table_insert(net, tb, cfg);
+}
+static inline int fib_table_delete(struct net *net, struct fib_table *tb,
+				   struct fib_config *cfg)
+{
+	return net->ipv4.fib_ops->table_delete(net, tb, cfg);
+}
+
 int fib_table_dump(struct fib_table *table, struct sk_buff *skb,
 		   struct netlink_callback *cb);
 int fib_table_flush(struct net *net, struct fib_table *table);

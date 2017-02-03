@@ -1219,8 +1219,8 @@ static int fib_insert_alias(struct trie *t, struct key_vector *tp,
 }
 
 /* Caller must hold RTNL. */
-int fib_table_insert(struct net *net, struct fib_table *tb,
-		     struct fib_config *cfg)
+static int fib_trie_table_insert(struct net *net, struct fib_table *tb,
+				 struct fib_config *cfg)
 {
 	struct trie *t = (struct trie *)tb->tb_data;
 	struct fib_alias *fa, *new_fa;
@@ -1622,8 +1622,8 @@ static void fib_remove_alias(struct trie *t, struct key_vector *tp,
 }
 
 /* Caller must hold RTNL. */
-int fib_table_delete(struct net *net, struct fib_table *tb,
-		     struct fib_config *cfg)
+static int fib_trie_table_delete(struct net *net, struct fib_table *tb,
+				 struct fib_config *cfg)
 {
 	struct trie *t = (struct trie *) tb->tb_data;
 	struct fib_alias *fa, *fa_to_delete;
@@ -3067,9 +3067,11 @@ static void fib_trie_net_exit(struct net *net)
 }
 
 struct fib_ops fib_trie_ops = {
-	.net_init = fib_trie_net_init,
-	.net_exit = fib_trie_net_exit,
+	.net_init	= fib_trie_net_init,
+	.net_exit	= fib_trie_net_exit,
 
-	.new_table = fib_trie_new_table,
-	.get_table = fib_trie_get_table,
+	.new_table	= fib_trie_new_table,
+	.get_table	= fib_trie_get_table,
+	.table_insert	= fib_trie_table_insert,
+	.table_delete	= fib_trie_table_delete,
 };
