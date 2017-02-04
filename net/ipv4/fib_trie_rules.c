@@ -190,7 +190,7 @@ static int fib4_rule_configure(struct fib_rule *rule, struct sk_buff *skb,
 		goto errout;
 
 	/* split local/main if they are not already split */
-	err = fib_unmerge(net);
+	err = fib_trie_unmerge(net);
 	if (err)
 		goto errout;
 
@@ -242,7 +242,7 @@ static int fib4_rule_delete(struct fib_rule *rule)
 	int err;
 
 	/* split local/main if they are not already split */
-	err = fib_unmerge(net);
+	err = fib_trie_unmerge(net);
 	if (err)
 		goto errout;
 

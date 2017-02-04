@@ -283,7 +283,6 @@ static inline int fib_table_flush(struct net *net, struct fib_table *table)
 	return net->ipv4.fib_ops->table_flush(net, table);
 }
 
-struct fib_table *fib_trie_unmerge(struct fib_table *main_tb);
 void fib_free_table(struct fib_table *tb);
 
 struct fib_table *fib_new_table(struct net *net, u32 id);
@@ -379,7 +378,6 @@ static inline int fib_num_tclassid_users(struct net *net)
 	return 0;
 }
 #endif
-int fib_unmerge(struct net *net);
 
 /* Exported by fib_semantics.c */
 int ip_fib_check_default(__be32 gw, struct net_device *dev);

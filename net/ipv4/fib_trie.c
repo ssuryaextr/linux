@@ -1720,7 +1720,7 @@ static void fib_trie_free(struct fib_table *tb)
 	kfree(tb);
 }
 
-struct fib_table *fib_trie_unmerge(struct fib_table *oldtb)
+static struct fib_table *__fib_trie_unmerge(struct fib_table *oldtb)
 {
 	struct trie *ot = (struct trie *)oldtb->tb_data;
 	struct key_vector *l, *tp = ot->kv;
@@ -2897,7 +2897,7 @@ static void fib_replace_table(struct net *net, struct fib_table *old,
 	hlist_replace_rcu(&old->tb_hlist, &new->tb_hlist);
 }
 
-int fib_unmerge(struct net *net)
+int fib_trie_unmerge(struct net *net)
 {
 	struct fib_table *old, *new, *main_table;
 
@@ -2906,7 +2906,7 @@ int fib_unmerge(struct net *net)
 	if (!old)
 		return 0;
 
-	new = fib_trie_unmerge(old);
+	new = __fib_trie_unmerge(old);
 	if (!new)
 		return -ENOMEM;
 
