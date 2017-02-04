@@ -1999,7 +1999,7 @@ static void __trie_free_rcu(struct rcu_head *head)
 	kfree(tb);
 }
 
-void fib_free_table(struct fib_table *tb)
+static void fib_trie_free_table(struct fib_table *tb)
 {
 	call_rcu(&tb->rcu, __trie_free_rcu);
 }
@@ -2798,7 +2798,7 @@ static int __net_init fib4_rules_init(struct net *net)
 	return 0;
 
 fail:
-	fib_free_table(main_table);
+	fib_trie_free_table(main_table);
 	return -ENOMEM;
 }
 
@@ -2916,7 +2916,7 @@ int fib_trie_unmerge(struct net *net)
 
 	/* replace merged table with clean table */
 	fib_replace_table(net, old, new);
-	fib_free_table(old);
+	fib_trie_free_table(old);
 
 	/* attempt to fetch main table if it has been allocated */
 	main_table = fib_trie_get_table(net, RT_TABLE_MAIN);
@@ -2970,7 +2970,7 @@ static void fib_trie_net_exit(struct net *net)
 		hlist_for_each_entry_safe(tb, tmp, head, tb_hlist) {
 			hlist_del(&tb->tb_hlist);
 			fib_table_flush(net, tb);
-			fib_free_table(tb);
+			fib_trie_free_table(tb);
 		}
 	}
 

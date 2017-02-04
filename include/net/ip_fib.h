@@ -283,8 +283,6 @@ static inline int fib_table_flush(struct net *net, struct fib_table *table)
 	return net->ipv4.fib_ops->table_flush(net, table);
 }
 
-void fib_free_table(struct fib_table *tb);
-
 struct fib_table *fib_new_table(struct net *net, u32 id);
 
 static inline struct fib_table *fib_get_table(struct net *net, u32 id)
