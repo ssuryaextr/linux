@@ -36,6 +36,11 @@ int fib_dump_info(struct sk_buff *skb, u32 pid, u32 seq, int event, u32 tb_id,
 void rtmsg_fib(int event, __be32 key, struct fib_alias *fa, int dst_len,
 	       u32 tb_id, const struct nl_info *info, unsigned int nlm_flags);
 
+int call_fib_entry_notifiers(struct net *net,
+                             enum fib_event_type event_type, u32 dst,
+                             int dst_len, struct fib_info *fi,
+                             u8 tos, u8 type, u32 tb_id, u32 nlflags);
+
 static inline void fib_result_assign(struct fib_result *res,
 				     struct fib_info *fi)
 {

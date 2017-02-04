@@ -174,6 +174,9 @@ struct fib_ops {
 	int			(*table_delete)(struct net *net,
 						struct fib_table *tb,
 						struct fib_config *cfg);
+
+	void			(*fib_notify_register)(struct net *net,
+						       struct notifier_block *nb);
 };
 
 #ifdef CONFIG_IP_ROUTE_MULTIPATH

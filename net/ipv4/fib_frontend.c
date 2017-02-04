@@ -914,6 +914,93 @@ no_promotions:
 #undef BRD1_OK
 }
 
+static unsigned int fib_seq_sum(void)
+{
+	unsigned int fib_seq = 0;
+	struct net *net;
+
+	rtnl_lock();
+	for_each_net(net)
+		fib_seq += net->ipv4.fib_seq;
+	rtnl_unlock();
+
+	return fib_seq;
+}
+
+static ATOMIC_NOTIFIER_HEAD(fib_chain);
+
+static bool fib_dump_is_consistent(struct notifier_block *nb,
+				   void (*cb)(struct notifier_block *nb),
+				   unsigned int fib_seq)
+{
+	atomic_notifier_chain_register(&fib_chain, nb);
+	if (fib_seq == fib_seq_sum())
+		return true;
+	atomic_notifier_chain_unregister(&fib_chain, nb);
+	if (cb)
+		cb(nb);
+	return false;
+}
+
+#define FIB_DUMP_MAX_RETRIES 5
+int register_fib_notifier(struct notifier_block *nb,
+			  void (*cb)(struct notifier_block *nb))
+{
+	int retries = 0;
+
+	do {
+		unsigned int fib_seq = fib_seq_sum();
+		struct net *net;
+
+		/* Mutex semantics guarantee that every change done to
+		 * FIB tries before we read the change sequence counter
+		 * is now visible to us.
+		 */
+		rcu_read_lock();
+		for_each_net_rcu(net) {
+			net->ipv4.fib_ops->fib_notify_register(net, nb);
+		}
+		rcu_read_unlock();
+
+		if (fib_dump_is_consistent(nb, cb, fib_seq))
+			return 0;
+	} while (++retries < FIB_DUMP_MAX_RETRIES);
+
+	return -EBUSY;
+}
+EXPORT_SYMBOL(register_fib_notifier);
+
+int unregister_fib_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&fib_chain, nb);
+}
+EXPORT_SYMBOL(unregister_fib_notifier);
+
+int call_fib_notifiers(struct net *net, enum fib_event_type event_type,
+		       struct fib_notifier_info *info)
+{
+	net->ipv4.fib_seq++;
+	info->net = net;
+	return atomic_notifier_call_chain(&fib_chain, event_type, info);
+}
+
+int call_fib_entry_notifiers(struct net *net,
+			     enum fib_event_type event_type, u32 dst,
+			     int dst_len, struct fib_info *fi,
+			     u8 tos, u8 type, u32 tb_id, u32 nlflags)
+{
+	struct fib_entry_notifier_info info = {
+		.dst = dst,
+		.dst_len = dst_len,
+		.fi = fi,
+		.tos = tos,
+		.type = type,
+		.tb_id = tb_id,
+		.nlflags = nlflags,
+	};
+	return call_fib_notifiers(net, event_type, &info.info);
+}
+
 static void nl_fib_lookup(struct net *net, struct fib_result_nl *frn)
 {
 
