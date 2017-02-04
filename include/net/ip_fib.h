@@ -163,6 +163,11 @@ struct fib_ops {
 						struct fib_result *res,
 						int fib_flags);
 
+	int			(*lookup)(struct net *net,
+					  struct flowi4 *flp,
+					  struct fib_result *res,
+					  unsigned int fib_flags);
+
 	void			(*notify_register)(struct net *net,
 						   struct notifier_block *nb);
 };
@@ -277,74 +282,11 @@ static inline struct fib_table *fib_get_table(struct net *net, u32 id)
 	return net->ipv4.fib_ops->get_table(net, id);
 }
 
-#ifndef CONFIG_IP_MULTIPLE_TABLES
-
-#define TABLE_LOCAL_INDEX	(RT_TABLE_LOCAL & (FIB_TABLE_HASHSZ - 1))
-#define TABLE_MAIN_INDEX	(RT_TABLE_MAIN  & (FIB_TABLE_HASHSZ - 1))
-
-static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
-			     struct fib_result *res, unsigned int flags)
-{
-	struct fib_table *tb;
-	int err = -ENETUNREACH;
-
-	rcu_read_lock();
-
-	tb = fib_get_table(net, RT_TABLE_MAIN);
-	if (tb)
-		err = fib_table_lookup(net, tb, flp, res,
-				       flags | FIB_LOOKUP_NOREF);
-
-	if (err == -EAGAIN)
-		err = -ENETUNREACH;
-
-	rcu_read_unlock();
-
-	return err;
-}
-
-#else /* CONFIG_IP_MULTIPLE_TABLES */
-int __net_init fib4_rules_init(struct net *net);
-void __net_exit fib4_rules_exit(struct net *net);
-
-int __fib_lookup(struct net *net, struct flowi4 *flp,
-		 struct fib_result *res, unsigned int flags);
-
 static inline int fib_lookup(struct net *net, struct flowi4 *flp,
 			     struct fib_result *res, unsigned int flags)
 {
-	struct fib_table *tb;
-	int err = -ENETUNREACH;
-
-	flags |= FIB_LOOKUP_NOREF;
-	if (net->ipv4.fib_has_custom_rules)
-		return __fib_lookup(net, flp, res, flags);
-
-	rcu_read_lock();
-
-	res->tclassid = 0;
-
-	tb = rcu_dereference_rtnl(net->ipv4.fib_main);
-	if (tb)
-		err = fib_table_lookup(net, tb, flp, res, flags);
-
-	if (!err)
-		goto out;
-
-	tb = rcu_dereference_rtnl(net->ipv4.fib_default);
-	if (tb)
-		err = fib_table_lookup(net, tb, flp, res, flags);
-
-out:
-	if (err == -EAGAIN)
-		err = -ENETUNREACH;
-
-	rcu_read_unlock();
-
-	return err;
+	return net->ipv4.fib_ops->lookup(net, flp, res, flags);
 }
-
-#endif /* CONFIG_IP_MULTIPLE_TABLES */
 
 /* Exported by fib_frontend.c */
 extern const struct nla_policy rtm_ipv4_policy[];

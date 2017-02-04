@@ -1499,6 +1499,67 @@ found:
 	goto backtrace;
 }
 
+#ifndef CONFIG_IP_MULTIPLE_TABLES
+
+#define TABLE_LOCAL_INDEX       (RT_TABLE_LOCAL & (FIB_TABLE_HASHSZ - 1))
+#define TABLE_MAIN_INDEX        (RT_TABLE_MAIN  & (FIB_TABLE_HASHSZ - 1))
+
+static int fib_trie_lookup(struct net *net, const struct flowi4 *flp,
+			   struct fib_result *res, unsigned int flags)
+{
+	struct fib_table *tb;
+	int err = -ENETUNREACH;
+
+	rcu_read_lock();
+
+	tb = fib_trie_get_table(net, RT_TABLE_MAIN);
+	if (tb)
+		err = fib_trie_table_lookup(tb, flp, res,
+					    flags | FIB_LOOKUP_NOREF);
+
+	if (err == -EAGAIN)
+		err = -ENETUNREACH;
+
+	rcu_read_unlock();
+
+	return err;
+}
+#else
+static int fib_trie_lookup(struct net *net, struct flowi4 *flp,
+			   struct fib_result *res, unsigned int flags)
+{
+	struct fib_table *tb;
+	int err = -ENETUNREACH;
+
+	flags |= FIB_LOOKUP_NOREF;
+	if (net->ipv4.fib_has_custom_rules)
+		return __fib_trie_lookup(net, flp, res, flags);
+
+	rcu_read_lock();
+
+	res->tclassid = 0;
+
+	tb = rcu_dereference_rtnl(net->ipv4.fib_main);
+	if (tb)
+		err = fib_trie_table_lookup(tb, flp, res, flags);
+
+	if (!err)
+		goto out;
+
+	tb = rcu_dereference_rtnl(net->ipv4.fib_default);
+	if (tb)
+		err = fib_trie_table_lookup(tb, flp, res, flags);
+
+out:
+	if (err == -EAGAIN)
+		err = -ENETUNREACH;
+
+	rcu_read_unlock();
+
+	return err;
+}
+#endif /* CONFIG_IP_MULTIPLE_TABLES */
+
 static void fib_remove_alias(struct trie *t, struct key_vector *tp,
 			     struct key_vector *l, struct fib_alias *old)
 {
@@ -2992,6 +3053,8 @@ struct fib_ops fib_trie_ops = {
 	.table_flush	= fib_trie_table_flush,
 	.table_dump	= fib_trie_table_dump,
 	.table_lookup	= fib_trie_table_lookup,
+
+	.lookup		= fib_trie_lookup,
 
 	.notify_register = fib_trie_notify_register,
 };

@@ -48,8 +48,8 @@ struct fib4_rule {
 #endif
 };
 
-int __fib_lookup(struct net *net, struct flowi4 *flp,
-		 struct fib_result *res, unsigned int flags)
+int __fib_trie_lookup(struct net *net, struct flowi4 *flp,
+		      struct fib_result *res, unsigned int flags)
 {
 	struct fib_lookup_arg arg = {
 		.result = res,
@@ -73,7 +73,6 @@ int __fib_lookup(struct net *net, struct flowi4 *flp,
 
 	return err;
 }
-EXPORT_SYMBOL_GPL(__fib_lookup);
 
 static int fib4_rule_action(struct fib_rule *rule, struct flowi *flp,
 			    int flags, struct fib_lookup_arg *arg)
