@@ -146,21 +146,6 @@ struct fib_result {
 	struct hlist_head *fa_head;
 };
 
-struct fib_result_nl {
-	__be32		fl_addr;   /* To be looked up*/
-	u32		fl_mark;
-	unsigned char	fl_tos;
-	unsigned char   fl_scope;
-	unsigned char   tb_id_in;
-
-	unsigned char   tb_id;      /* Results */
-	unsigned char	prefixlen;
-	unsigned char	nh_sel;
-	unsigned char	type;
-	unsigned char	scope;
-	int             err;      
-};
-
 struct fib_ops {
 	int	(*net_init)(struct net *net);
 	void	(*net_exit)(struct net *net);
