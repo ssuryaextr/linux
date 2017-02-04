@@ -1779,7 +1779,7 @@ out:
 }
 
 /* Caller must hold RTNL */
-void fib_table_flush_external(struct fib_table *tb)
+static void fib_table_flush_external(struct fib_table *tb)
 {
 	struct trie *t = (struct trie *)tb->tb_data;
 	struct key_vector *pn = t->kv;
@@ -1848,7 +1848,7 @@ void fib_table_flush_external(struct fib_table *tb)
 }
 
 /* Caller must hold RTNL. */
-int fib_table_flush(struct net *net, struct fib_table *tb)
+static int fib_trie_table_flush(struct net *net, struct fib_table *tb)
 {
 	struct trie *t = (struct trie *)tb->tb_data;
 	struct key_vector *pn = t->kv;
@@ -2989,6 +2989,7 @@ struct fib_ops fib_trie_ops = {
 	.get_table	= fib_trie_get_table,
 	.table_insert	= fib_trie_table_insert,
 	.table_delete	= fib_trie_table_delete,
+	.table_flush	= fib_trie_table_flush,
 
 	.fib_notify_register = fib_trie_notify_register,
 };
