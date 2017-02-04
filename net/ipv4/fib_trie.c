@@ -2991,5 +2991,5 @@ struct fib_ops fib_trie_ops = {
 	.table_delete	= fib_trie_table_delete,
 	.table_flush	= fib_trie_table_flush,
 
-	.fib_notify_register = fib_trie_notify_register,
+	.notify_register = fib_trie_notify_register,
 };

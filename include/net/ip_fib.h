@@ -177,8 +177,8 @@ struct fib_ops {
 	int			(*table_flush)(struct net *net,
 					       struct fib_table *table);
 
-	void			(*fib_notify_register)(struct net *net,
-						       struct notifier_block *nb);
+	void			(*notify_register)(struct net *net,
+						   struct notifier_block *nb);
 };
 
 #ifdef CONFIG_IP_ROUTE_MULTIPATH

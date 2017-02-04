@@ -958,7 +958,7 @@ int register_fib_notifier(struct notifier_block *nb,
 		 */
 		rcu_read_lock();
 		for_each_net_rcu(net) {
-			net->ipv4.fib_ops->fib_notify_register(net, nb);
+			net->ipv4.fib_ops->notify_register(net, nb);
 		}
 		rcu_read_unlock();
 
