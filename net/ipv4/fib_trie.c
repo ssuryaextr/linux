@@ -2046,8 +2046,8 @@ static int fn_trie_dump_leaf(struct key_vector *l, struct fib_table *tb,
 }
 
 /* rcu_read_lock needs to be hold by caller from readside */
-int fib_table_dump(struct fib_table *tb, struct sk_buff *skb,
-		   struct netlink_callback *cb)
+static int fib_trie_table_dump(struct fib_table *tb, struct sk_buff *skb,
+			       struct netlink_callback *cb)
 {
 	struct trie *t = (struct trie *)tb->tb_data;
 	struct key_vector *l, *tp = t->kv;
@@ -2990,6 +2990,7 @@ struct fib_ops fib_trie_ops = {
 	.table_insert	= fib_trie_table_insert,
 	.table_delete	= fib_trie_table_delete,
 	.table_flush	= fib_trie_table_flush,
+	.table_dump	= fib_trie_table_dump,
 
 	.notify_register = fib_trie_notify_register,
 };

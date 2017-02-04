@@ -655,7 +655,7 @@ static int inet_dump_fib(struct sk_buff *skb, struct netlink_callback *cb)
 			if (dumped)
 				memset(&cb->args[2], 0, sizeof(cb->args) -
 						 2 * sizeof(cb->args[0]));
-			if (fib_table_dump(tb, skb, cb) < 0)
+			if (fib_table_dump(net, tb, skb, cb) < 0)
 				goto out;
 			dumped = 1;
 next:

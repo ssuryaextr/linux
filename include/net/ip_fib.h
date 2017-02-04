@@ -176,6 +176,9 @@ struct fib_ops {
 						struct fib_config *cfg);
 	int			(*table_flush)(struct net *net,
 					       struct fib_table *table);
+	int			(*table_dump)(struct fib_table *tb,
+					      struct sk_buff *skb,
+					      struct netlink_callback *cb);
 
 	void			(*notify_register)(struct net *net,
 						   struct notifier_block *nb);
@@ -268,9 +271,13 @@ static inline int fib_table_delete(struct net *net, struct fib_table *tb,
 {
 	return net->ipv4.fib_ops->table_delete(net, tb, cfg);
 }
-
-int fib_table_dump(struct fib_table *table, struct sk_buff *skb,
-		   struct netlink_callback *cb);
+static inline int fib_table_dump(struct net *net,
+				 struct fib_table *table,
+				 struct sk_buff *skb,
+				 struct netlink_callback *cb)
+{
+	return net->ipv4.fib_ops->table_dump(table, skb, cb);
+}
 static inline int fib_table_flush(struct net *net, struct fib_table *table)
 {
 	return net->ipv4.fib_ops->table_flush(net, table);
