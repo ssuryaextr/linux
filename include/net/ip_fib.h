@@ -19,7 +19,6 @@
 #include <net/flow.h>
 #include <linux/seq_file.h>
 #include <linux/rcupdate.h>
-#include <net/fib_rules.h>
 #include <net/inetpeer.h>
 #include <linux/percpu.h>
 #include <linux/notifier.h>
@@ -128,11 +127,6 @@ struct fib_info {
 	struct fib_nh		fib_nh[0];
 #define fib_dev		fib_nh[0].nh_dev
 };
-
-
-#ifdef CONFIG_IP_MULTIPLE_TABLES
-struct fib_rule;
-#endif
 
 struct fib_table;
 struct fib_result {
