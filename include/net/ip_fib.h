@@ -179,6 +179,10 @@ struct fib_ops {
 	int			(*table_dump)(struct fib_table *tb,
 					      struct sk_buff *skb,
 					      struct netlink_callback *cb);
+	int			(*table_lookup)(struct fib_table *tb,
+						const struct flowi4 *flp,
+						struct fib_result *res,
+						int fib_flags);
 
 	void			(*notify_register)(struct net *net,
 						   struct notifier_block *nb);
@@ -259,8 +263,12 @@ struct fib_table {
 	unsigned long		__data[0];
 };
 
-int fib_table_lookup(struct fib_table *tb, const struct flowi4 *flp,
-		     struct fib_result *res, int fib_flags);
+static inline int fib_table_lookup(struct net *net, struct fib_table *tb,
+				   const struct flowi4 *flp,
+				   struct fib_result *res, int fib_flags)
+{
+	return net->ipv4.fib_ops->table_lookup(tb, flp, res, fib_flags);
+}
 static inline int fib_table_insert(struct net *net, struct fib_table *tb,
 				   struct fib_config *cfg)
 {
@@ -305,7 +313,8 @@ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
 
 	tb = fib_get_table(net, RT_TABLE_MAIN);
 	if (tb)
-		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
+		err = fib_table_lookup(net, tb, flp, res,
+				       flags | FIB_LOOKUP_NOREF);
 
 	if (err == -EAGAIN)
 		err = -ENETUNREACH;
@@ -338,14 +347,14 @@ static inline int fib_lookup(struct net *net, struct flowi4 *flp,
 
 	tb = rcu_dereference_rtnl(net->ipv4.fib_main);
 	if (tb)
-		err = fib_table_lookup(tb, flp, res, flags);
+		err = fib_table_lookup(net, tb, flp, res, flags);
 
 	if (!err)
 		goto out;
 
 	tb = rcu_dereference_rtnl(net->ipv4.fib_default);
 	if (tb)
-		err = fib_table_lookup(tb, flp, res, flags);
+		err = fib_table_lookup(net, tb, flp, res, flags);
 
 out:
 	if (err == -EAGAIN)

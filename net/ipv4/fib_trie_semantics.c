@@ -767,7 +767,7 @@ static int fib_check_nh(struct fib_config *cfg, struct fib_info *fi,
 				tbl = fib_trie_get_table(net, cfg->fc_table);
 
 			if (tbl)
-				err = fib_table_lookup(tbl, &fl4, &res,
+				err = fib_trie_table_lookup(tbl, &fl4, &res,
 						       FIB_LOOKUP_IGNORE_LINKSTATE |
 						       FIB_LOOKUP_NOREF);
 

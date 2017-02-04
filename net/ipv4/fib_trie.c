@@ -1307,8 +1307,9 @@ static inline t_key prefix_mismatch(t_key key, struct key_vector *n)
 }
 
 /* should be called with rcu_read_lock */
-int fib_table_lookup(struct fib_table *tb, const struct flowi4 *flp,
-		     struct fib_result *res, int fib_flags)
+int fib_trie_table_lookup(struct fib_table *tb,
+			  const struct flowi4 *flp,
+			  struct fib_result *res, int fib_flags)
 {
 	struct trie *t = (struct trie *) tb->tb_data;
 #ifdef CONFIG_IP_FIB_TRIE_STATS
@@ -1497,7 +1498,6 @@ found:
 #endif
 	goto backtrace;
 }
-EXPORT_SYMBOL_GPL(fib_table_lookup);
 
 static void fib_remove_alias(struct trie *t, struct key_vector *tp,
 			     struct key_vector *l, struct fib_alias *old)
@@ -2991,6 +2991,7 @@ struct fib_ops fib_trie_ops = {
 	.table_delete	= fib_trie_table_delete,
 	.table_flush	= fib_trie_table_flush,
 	.table_dump	= fib_trie_table_dump,
+	.table_lookup	= fib_trie_table_lookup,
 
 	.notify_register = fib_trie_notify_register,
 };
