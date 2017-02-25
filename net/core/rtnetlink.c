@@ -1461,6 +1461,7 @@ static const struct nla_policy ifla_policy[IFLA_MAX+1] = {
 	[IFLA_LINK_NETNSID]	= { .type = NLA_S32 },
 	[IFLA_PROTO_DOWN]	= { .type = NLA_U8 },
 	[IFLA_XDP]		= { .type = NLA_NESTED },
+	[IFLA_INVISIBLE]	= { .type = NLA_U8 },
 };
 
 static const struct nla_policy ifla_info_policy[IFLA_INFO_MAX+1] = {
@@ -1573,6 +1574,7 @@ static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 	u32 ext_filter_mask = 0;
 	const struct rtnl_link_ops *kind_ops = NULL;
 	unsigned int flags = NLM_F_MULTI;
+	bool show_invisible = false;
 	int master_idx = 0;
 	int err;
 	int hdrlen;
@@ -1605,6 +1607,9 @@ static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 
 		if (master_idx || kind_ops)
 			flags |= NLM_F_DUMP_FILTERED;
+
+		if (tb[IFLA_INVISIBLE])
+			show_invisible = !!(nla_get_u8(tb[IFLA_INVISIBLE]));
 	}
 
 	for (h = s_h; h < NETDEV_HASHENTRIES; h++, s_idx = 0) {
@@ -1614,6 +1619,8 @@ static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 			if (link_dump_filtered(dev, master_idx, kind_ops))
 				goto cont;
 			if (idx < s_idx)
+				goto cont;
+			if (netif_is_invisible(dev) && !show_invisible)
 				goto cont;
 			err = rtnl_fill_ifinfo(skb, dev, RTM_NEWLINK,
 					       NETLINK_CB(cb->skb).portid,
@@ -2197,6 +2204,13 @@ static int do_setlink(const struct sk_buff *skb,
 		}
 	}
 
+	if (tb[IFLA_INVISIBLE]) {
+		if (nla_get_u8(tb[IFLA_INVISIBLE]))
+			netif_make_invisible(dev);
+		else
+			netif_make_visible(dev);
+	}
+
 errout:
 	if (status & DO_SETLINK_MODIFIED) {
 		if (status & DO_SETLINK_NOTIFY)
@@ -2621,6 +2635,13 @@ replay:
 			goto out;
 		}
 
+		if (tb[IFLA_INVISIBLE]) {
+			if (nla_get_u8(tb[IFLA_INVISIBLE]))
+				netif_make_invisible(dev);
+			else
+				netif_make_visible(dev);
+		}
+
 		dev->ifindex = ifm->ifi_index;
 
 		if (ops->newlink) {
@@ -2820,6 +2841,9 @@ void rtmsg_ifinfo(int type, struct net_device *dev, unsigned int change,
 	struct sk_buff *skb;
 
 	if (dev->reg_state != NETREG_REGISTERED)
+		return;
+
+	if (netif_is_invisible(dev))
 		return;
 
 	skb = rtmsg_ifinfo_build_skb(type, dev, change, flags);

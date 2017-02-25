@@ -1397,6 +1397,7 @@ enum netdev_priv_flags {
 	IFF_RXFH_CONFIGURED		= 1<<25,
 	IFF_PHONY_HEADROOM		= 1<<26,
 	IFF_MACSEC			= 1<<27,
+	IFF_INVISIBLE			= 1<<28,
 };
 
 #define IFF_802_1Q_VLAN			IFF_802_1Q_VLAN
@@ -1426,6 +1427,7 @@ enum netdev_priv_flags {
 #define IFF_TEAM			IFF_TEAM
 #define IFF_RXFH_CONFIGURED		IFF_RXFH_CONFIGURED
 #define IFF_MACSEC			IFF_MACSEC
+#define IFF_INVISIBLE			IFF_INVISIBLE
 
 /**
  *	struct net_device - The DEVICE structure.
@@ -4214,6 +4216,21 @@ static inline bool netif_is_lag_port(const struct net_device *dev)
 static inline bool netif_is_rxfh_configured(const struct net_device *dev)
 {
 	return dev->priv_flags & IFF_RXFH_CONFIGURED;
+}
+
+static inline void netif_make_invisible(struct net_device *dev)
+{
+	dev->priv_flags |= IFF_INVISIBLE;
+}
+
+static inline void netif_make_visible(struct net_device *dev)
+{
+	dev->priv_flags &= ~IFF_INVISIBLE;
+}
+
+static inline bool netif_is_invisible(struct net_device *dev)
+{
+	return dev->priv_flags & IFF_INVISIBLE;
 }
 
 /* This device needs to keep skb dst for qdisc enqueue or ndo_start_xmit() */

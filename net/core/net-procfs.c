@@ -21,7 +21,7 @@ static inline struct net_device *dev_from_same_bucket(struct seq_file *seq, loff
 
 	h = &net->dev_name_head[get_bucket(*pos)];
 	hlist_for_each_entry_rcu(dev, h, name_hlist) {
-		if (++count == offset)
+		if (++count == offset && !netif_is_invisible(dev))
 			return dev;
 	}
 
