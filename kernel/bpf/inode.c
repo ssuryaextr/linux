@@ -23,13 +23,7 @@
 #include <linux/bpf.h>
 #include <linux/bpf_trace.h>
 
-enum bpf_type {
-	BPF_TYPE_UNSPEC	= 0,
-	BPF_TYPE_PROG,
-	BPF_TYPE_MAP,
-};
-
-static void *bpf_any_get(void *raw, enum bpf_type type)
+void *bpf_any_get(void *raw, enum bpf_type type)
 {
 	switch (type) {
 	case BPF_TYPE_PROG:
@@ -46,7 +40,7 @@ static void *bpf_any_get(void *raw, enum bpf_type type)
 	return raw;
 }
 
-static void bpf_any_put(void *raw, enum bpf_type type)
+void bpf_any_put(void *raw, enum bpf_type type)
 {
 	switch (type) {
 	case BPF_TYPE_PROG:

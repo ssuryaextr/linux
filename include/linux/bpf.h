@@ -209,6 +209,14 @@ struct bpf_event_entry {
 	struct rcu_head rcu;
 };
 
+enum bpf_type {
+	BPF_TYPE_UNSPEC = 0,
+	BPF_TYPE_PROG,
+	BPF_TYPE_MAP,
+};
+void *bpf_any_get(void *raw, enum bpf_type type);
+void bpf_any_put(void *raw, enum bpf_type type);
+
 u64 bpf_tail_call(u64 ctx, u64 r2, u64 index, u64 r4, u64 r5);
 u64 bpf_get_stackid(u64 r1, u64 r2, u64 r3, u64 r4, u64 r5);
 
