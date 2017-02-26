@@ -702,6 +702,25 @@ void bpf_prog_put(struct bpf_prog *prog)
 }
 EXPORT_SYMBOL_GPL(bpf_prog_put);
 
+static ssize_t bpf_prog_read(struct file *file, char __user *buf, size_t len,
+			     loff_t *off)
+{
+	struct bpf_prog *prog = file->private_data;
+	u32 plen;
+
+	if (!prog->orig_prog)
+		return -ENOENT;
+
+	plen = prog->orig_prog->len * sizeof(struct bpf_insn);
+	if (plen > len)
+		return -E2BIG;
+
+	if (copy_to_user(buf, prog->orig_prog->insn, plen))
+		return -EFAULT;
+
+	return plen;
+}
+
 static int bpf_prog_release(struct inode *inode, struct file *filp)
 {
 	struct bpf_prog *prog = filp->private_data;
@@ -734,6 +753,7 @@ static const struct file_operations bpf_prog_fops = {
 	.show_fdinfo	= bpf_prog_show_fdinfo,
 #endif
 	.release	= bpf_prog_release,
+	.read		= bpf_prog_read,
 };
 
 int bpf_prog_new_fd(struct bpf_prog *prog)
