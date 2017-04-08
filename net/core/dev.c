@@ -7557,7 +7557,7 @@ void netdev_run_todo(void)
 		wake_up(&netdev_unregistering_wq);
 
 		/* Free network device */
-		kobject_put(&dev->dev.kobj);
+		netdev_kobject_put(dev);
 	}
 }
 
@@ -7663,15 +7663,16 @@ void netdev_freemem(struct net_device *dev)
  * @setup: callback to initialize device
  * @txqs: the number of TX subqueues to allocate
  * @rxqs: the number of RX subqueues to allocate
+ * @flags: flags to 'or' with priv_flags
  *
  * Allocates a struct net_device with private data area for driver use
  * and performs basic initialization.  Also allocates subqueue structs
  * for each queue on the device.
  */
-struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
+static struct net_device *__alloc_netdev_mqs(int sizeof_priv, const char *name,
 		unsigned char name_assign_type,
 		void (*setup)(struct net_device *),
-		unsigned int txqs, unsigned int rxqs)
+		unsigned int txqs, unsigned int rxqs, unsigned int flags)
 {
 	struct net_device *dev;
 	size_t alloc_size;
@@ -7755,6 +7756,8 @@ struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 		goto free_all;
 #endif
 
+	dev->priv_flags |= flags;
+
 	strcpy(dev->name, name);
 	dev->name_assign_type = name_assign_type;
 	dev->group = INIT_NETDEV_GROUP;
@@ -7775,7 +7778,26 @@ free_dev:
 	netdev_freemem(dev);
 	return NULL;
 }
+
+struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
+		unsigned char name_assign_type,
+		void (*setup)(struct net_device *),
+		unsigned int txqs, unsigned int rxqs)
+{
+	return __alloc_netdev_mqs(sizeof_priv, name, name_assign_type, setup,
+				  txqs, rxqs, 0);
+}
 EXPORT_SYMBOL(alloc_netdev_mqs);
+
+struct net_device *alloc_netdev_mqs_flags(int sizeof_priv, const char *name,
+		unsigned char name_assign_type,
+		void (*setup)(struct net_device *),
+		unsigned int txqs, unsigned int rxqs, unsigned int flags)
+{
+	return __alloc_netdev_mqs(sizeof_priv, name, name_assign_type, setup,
+				  txqs, rxqs, flags);
+}
+EXPORT_SYMBOL(alloc_netdev_mqs_flags);
 
 /**
  * free_netdev - free network device
@@ -7817,7 +7839,8 @@ void free_netdev(struct net_device *dev)
 	dev->reg_state = NETREG_RELEASED;
 
 	/* will free via device release */
-	put_device(&dev->dev);
+	if (!netif_is_lwt(dev))
+		put_device(&dev->dev);
 }
 EXPORT_SYMBOL(free_netdev);
 

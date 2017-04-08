@@ -1387,6 +1387,7 @@ enum netdev_priv_flags {
 	IFF_RXFH_CONFIGURED		= 1<<25,
 	IFF_PHONY_HEADROOM		= 1<<26,
 	IFF_MACSEC			= 1<<27,
+	IFF_LWT_DEV			= 1<<28,
 };
 
 #define IFF_802_1Q_VLAN			IFF_802_1Q_VLAN
@@ -1416,6 +1417,7 @@ enum netdev_priv_flags {
 #define IFF_TEAM			IFF_TEAM
 #define IFF_RXFH_CONFIGURED		IFF_RXFH_CONFIGURED
 #define IFF_MACSEC			IFF_MACSEC
+#define IFF_LWT_DEV			IFF_LWT_DEV
 
 /**
  *	struct net_device - The DEVICE structure.
@@ -3679,6 +3681,12 @@ struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 	alloc_netdev_mqs(sizeof_priv, name, name_assign_type, setup, count, \
 			 count)
 
+struct net_device *alloc_netdev_mqs_flags(int sizeof_priv, const char *name,
+					unsigned char name_assign_type,
+					void (*setup)(struct net_device *),
+					unsigned int txqs, unsigned int rxqs,
+					unsigned int flags);
+
 int register_netdev(struct net_device *dev);
 void unregister_netdev(struct net_device *dev);
 
@@ -4107,6 +4115,16 @@ static inline void skb_gso_error_unwind(struct sk_buff *skb, __be16 protocol,
 	skb->mac_len = mac_len;
 }
 
+static inline bool netif_is_lwt(struct net_device *dev)
+{
+	return !!(dev->priv_flags & IFF_LWT_DEV);
+}
+
+static inline bool netif_has_sysctl(struct net_device *dev)
+{
+	return !netif_is_lwt(dev);
+}
+
 static inline bool netif_is_macsec(const struct net_device *dev)
 {
 	return dev->priv_flags & IFF_MACSEC;
@@ -4221,6 +4239,12 @@ static inline const char *netdev_name(const struct net_device *dev)
 	if (!dev->name[0] || strchr(dev->name, '%'))
 		return "(unnamed net_device)";
 	return dev->name;
+}
+
+static inline void netdev_kobject_put(struct net_device *dev)
+{
+	if (!netif_is_lwt(dev))
+		kobject_put(&dev->dev.kobj);
 }
 
 static inline const char *netdev_reg_state(const struct net_device *dev)

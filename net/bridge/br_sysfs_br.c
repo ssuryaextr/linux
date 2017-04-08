@@ -917,9 +917,15 @@ static struct bin_attribute bridge_forward = {
  */
 int br_sysfs_addbr(struct net_device *dev)
 {
-	struct kobject *brobj = &dev->dev.kobj;
-	struct net_bridge *br = netdev_priv(dev);
+	struct kobject *brobj;
+	struct net_bridge *br;
 	int err;
+
+	if (netif_is_lwt(dev))
+		return 0;
+
+	brobj = &dev->dev.kobj;
+	br = netdev_priv(dev);
 
 	err = sysfs_create_group(brobj, &bridge_group);
 	if (err) {

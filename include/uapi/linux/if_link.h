@@ -158,6 +158,7 @@ enum {
 	IFLA_PAD,
 	IFLA_XDP,
 	IFLA_EVENT,
+	IFLA_LWT_NETDEV,
 	__IFLA_MAX
 };
 
