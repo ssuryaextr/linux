@@ -3425,3 +3425,44 @@ out:
 	release_sock(sk);
 	return ret;
 }
+
+struct bpf_prog *sk_get_prog_file(struct file *file)
+{
+	struct sock_fprog_kern *fkprog;
+	struct bpf_prog *prog = NULL;
+	struct sk_filter *filter;
+	struct socket *sock;
+	struct sock *sk;
+	int err = 0;
+
+	sock = sock_from_file(file, &err);
+	if (err == -ENOTSOCK || !sock)
+		return NULL;
+
+	sk = sock->sk;
+
+	rcu_read_lock();
+	filter = rcu_dereference(sk->sk_filter);
+	rcu_read_unlock();
+	if (!filter)
+		return NULL;
+
+	prog = bpf_prog_alloc(bpf_prog_size(filter->prog->len), GFP_USER);
+	if (!prog)
+		return ERR_PTR(-ENOMEM);
+
+	prog->type = BPF_PROG_TYPE_SOCKET_FILTER;
+	prog->len = filter->prog->len;
+	memcpy(prog->insns, filter->prog->insns, bpf_prog_insn_size(prog));
+
+	prog->orig_prog = kmalloc(sizeof(*fkprog), GFP_KERNEL);
+	if (prog->orig_prog) {
+		fkprog = prog->orig_prog;
+		fkprog->len = filter->prog->orig_prog->len;
+		fkprog->filter = kmemdup(filter->prog->orig_prog->filter,
+					 bpf_classic_proglen(fkprog),
+					 GFP_KERNEL | __GFP_NOWARN);
+	}
+
+	return prog;
+}

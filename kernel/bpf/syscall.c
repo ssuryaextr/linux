@@ -18,6 +18,7 @@
 #include <linux/mmzone.h>
 #include <linux/anon_inodes.h>
 #include <linux/file.h>
+#include <linux/fdtable.h>
 #include <linux/license.h>
 #include <linux/filter.h>
 #include <linux/version.h>
@@ -774,6 +775,98 @@ static struct bpf_prog *____bpf_prog_get(struct fd f)
 	return f.file->private_data;
 }
 
+static int bpf_file_type(struct file *file, enum bpf_type *type)
+{
+	if (file->f_op == &bpf_prog_fops)
+		*type = BPF_TYPE_PROG;
+	else if (file->f_op == &bpf_map_fops)
+		*type = BPF_TYPE_MAP;
+	else
+		return -EINVAL;
+
+	return 0;
+}
+
+static void *bpf_obj_do_get_file(struct file *file, enum bpf_type *type)
+{
+	if (bpf_file_type(file, type) < 0) {
+		void *raw;
+
+		raw = sk_get_prog_file(file);
+		if (raw)
+			*type = BPF_TYPE_PROG;
+
+		return raw;
+	}
+
+	return bpf_any_get(file->private_data, *type);
+}
+
+static int bpf_obj_get_pid(const union bpf_attr *attr)
+{
+	enum bpf_type type = BPF_TYPE_UNSPEC;
+	struct task_struct *task;
+	struct file *file = NULL;
+	void *raw;
+	int ret;
+	u32 pid;
+
+	rcu_read_lock();
+
+	pid = attr->bpf_get_arg1;
+	task = find_task_by_vpid(pid);
+	if (!task)  {
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+	get_task_struct(task);
+
+	rcu_read_unlock();
+
+	task_lock(task);
+
+	rcu_read_lock();
+	if (task->files) {
+		u32 fd = attr->bpf_fd;
+
+		file = fcheck_files(task->files, fd);
+	}
+	rcu_read_unlock();
+
+	task_unlock(task);
+
+	ret = -EINVAL;
+	if (!file)
+		goto out;
+
+	raw = bpf_obj_do_get_file(file, &type);
+	if (!raw)
+		goto out;
+
+	if (IS_ERR(raw)) {
+		ret = PTR_ERR(raw);
+		goto out;
+	}
+
+	/* map prog to this process */
+	switch (type) {
+	case BPF_TYPE_PROG:
+		//ret = bpf_prog_charge_memlock(raw);
+		//if (!ret)
+		ret = bpf_prog_new_fd(raw);
+		if (ret < 0)
+			bpf_any_put(raw, type);
+		break;
+	default:
+		ret = -ENOENT;
+		bpf_any_put(raw, type);
+	}
+out:
+	put_task_struct(task);
+
+	return ret;
+}
+
 struct bpf_prog *bpf_prog_add(struct bpf_prog *prog, int i)
 {
 	if (atomic_add_return(i, &prog->aux->refcnt) > BPF_MAX_REFCNT) {
@@ -949,12 +1042,15 @@ static int bpf_obj_get_old(const union bpf_attr *attr)
 
 static int bpf_obj_get(const union bpf_attr *attr)
 {
-	if (CHECK_ATTR(BPF_OBJ))
+	if (!attr->bpf_get_type)
+		return bpf_obj_get_old(attr);
+
+	if (CHECK_ATTR(BPF_OBJ_GET))
 		return -EINVAL;
 
 	switch (attr->bpf_get_type) {
-	case BPF_GET_TYPE_UNSPEC:
-		return bpf_obj_get_old(attr);
+	case BPF_GET_TYPE_PID:
+		return bpf_obj_get_pid(attr);
 	}
 
 	return -EOPNOTSUPP;

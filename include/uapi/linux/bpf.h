@@ -129,6 +129,8 @@ enum bpf_attach_type {
 enum bpf_get_type {
 	/* legacy obj_get */
 	BPF_GET_TYPE_UNSPEC,
+	/* bpf_get_arg1 = pid, bpf_fd = fd of process */
+	BPF_GET_TYPE_PID,
 };
 
 /* If BPF_F_ALLOW_OVERRIDE flag is used in BPF_PROG_ATTACH command
