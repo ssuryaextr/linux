@@ -152,6 +152,28 @@ int __cgroup_bpf_update(struct cgroup *cgrp, struct cgroup *parent,
 	return 0;
 }
 
+int __cgroup_bpf_get(struct cgroup *cgrp, enum bpf_attach_type type)
+{
+	struct bpf_prog *prog;
+	int fd;
+
+	prog = rcu_dereference_protected(cgrp->bpf.effective[type],
+					 lockdep_is_held(&cgroup_mutex));
+	if (!prog)
+		return -ENOENT;
+
+	prog = bpf_prog_inc(prog);
+	if (IS_ERR(prog))
+		return PTR_ERR(prog);
+
+	//if (bpf_prog_charge_memlock(raw))
+	fd = bpf_prog_new_fd(prog);
+	if (fd < 0)
+		bpf_prog_put(prog);
+
+	return fd;
+}
+
 /**
  * __cgroup_bpf_run_filter_skb() - Run a program for packet filtering
  * @sk: The socket sending or receiving traffic

@@ -867,6 +867,27 @@ out:
 	return ret;
 }
 
+static int bpf_prog_get_cgroup(const union bpf_attr *attr)
+{
+	u32 attach_type = attr->bpf_get_arg1;
+	u32 target_fd = attr->bpf_fd;
+	struct cgroup *cgrp;
+	int fd;
+
+	if (attach_type >= MAX_BPF_ATTACH_TYPE)
+		return -EINVAL;
+
+	cgrp = cgroup_get_from_fd(target_fd);
+	if (IS_ERR(cgrp))
+		return -EINVAL;
+
+	fd = cgroup_bpf_get(cgrp, attach_type);
+
+	cgroup_put(cgrp);
+
+	return fd;
+}
+
 struct bpf_prog *bpf_prog_add(struct bpf_prog *prog, int i)
 {
 	if (atomic_add_return(i, &prog->aux->refcnt) > BPF_MAX_REFCNT) {
@@ -1051,6 +1072,8 @@ static int bpf_obj_get(const union bpf_attr *attr)
 	switch (attr->bpf_get_type) {
 	case BPF_GET_TYPE_PID:
 		return bpf_obj_get_pid(attr);
+	case BPF_GET_TYPE_CGROUP:
+		return bpf_prog_get_cgroup(attr);
 	}
 
 	return -EOPNOTSUPP;
