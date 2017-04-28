@@ -937,12 +937,27 @@ static int bpf_obj_pin(const union bpf_attr *attr)
 	return bpf_obj_pin_user(attr->bpf_fd, u64_to_user_ptr(attr->pathname));
 }
 
-static int bpf_obj_get(const union bpf_attr *attr)
+static int bpf_obj_get_old(const union bpf_attr *attr)
 {
 	if (CHECK_ATTR(BPF_OBJ) || attr->bpf_fd != 0)
 		return -EINVAL;
 
 	return bpf_obj_get_user(u64_to_user_ptr(attr->pathname));
+}
+
+#define BPF_OBJ_GET_LAST_FIELD bpf_get_arg5
+
+static int bpf_obj_get(const union bpf_attr *attr)
+{
+	if (CHECK_ATTR(BPF_OBJ))
+		return -EINVAL;
+
+	switch (attr->bpf_get_type) {
+	case BPF_GET_TYPE_UNSPEC:
+		return bpf_obj_get_old(attr);
+	}
+
+	return -EOPNOTSUPP;
 }
 
 #ifdef CONFIG_CGROUP_BPF

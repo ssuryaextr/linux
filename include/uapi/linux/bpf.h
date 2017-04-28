@@ -126,6 +126,11 @@ enum bpf_attach_type {
 
 #define MAX_BPF_ATTACH_TYPE __MAX_BPF_ATTACH_TYPE
 
+enum bpf_get_type {
+	/* legacy obj_get */
+	BPF_GET_TYPE_UNSPEC,
+};
+
 /* If BPF_F_ALLOW_OVERRIDE flag is used in BPF_PROG_ATTACH command
  * to the given target_fd cgroup the descendent cgroup will be able to
  * override effective bpf program that was inherited from this cgroup
@@ -182,6 +187,14 @@ union bpf_attr {
 	struct { /* anonymous struct used by BPF_OBJ_* commands */
 		__aligned_u64	pathname;
 		__u32		bpf_fd;
+		__u16		bpf_get_type;
+		__u16		bpf_get_flags;
+		/* args depend on GET_TYPE */
+		__u32		bpf_get_arg1;
+		__u32		bpf_get_arg2;
+		__u32		bpf_get_arg3;
+		__u32		bpf_get_arg4;
+		__aligned_u64	bpf_get_arg5;
 	};
 
 	struct { /* anonymous struct used by BPF_PROG_ATTACH/DETACH commands */
