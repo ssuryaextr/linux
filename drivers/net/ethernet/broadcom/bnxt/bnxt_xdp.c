@@ -207,6 +207,14 @@ static int bnxt_xdp_set(struct bnxt *bp, struct bpf_prog *prog)
 	return 0;
 }
 
+/* Under rtnl_lock */
+static int bnxt_xdp_get(struct bnxt *bp, struct bpf_prog **prog)
+{
+	*prog = bp->xdp_prog;
+
+	return 0;
+}
+
 int bnxt_xdp(struct net_device *dev, struct netdev_xdp *xdp)
 {
 	struct bnxt *bp = netdev_priv(dev);
@@ -219,6 +227,9 @@ int bnxt_xdp(struct net_device *dev, struct netdev_xdp *xdp)
 	case XDP_QUERY_PROG:
 		xdp->prog_attached = !!bp->xdp_prog;
 		rc = 0;
+		break;
+	case XDP_GET_PROG:
+		rc = bnxt_xdp_get(bp, &xdp->prog);
 		break;
 	default:
 		rc = -EINVAL;

@@ -4283,6 +4283,10 @@ static int generic_xdp_install(struct net_device *dev, struct netdev_xdp *xdp)
 		xdp->prog_attached = !!rcu_access_pointer(dev->xdp_prog);
 		break;
 
+	case XDP_GET_PROG:
+		xdp->prog = rtnl_dereference(dev->xdp_prog);
+		break;
+
 	default:
 		ret = -EINVAL;
 		break;
@@ -6899,6 +6903,36 @@ int dev_change_xdp_fd(struct net_device *dev, int fd, u32 flags)
 		bpf_prog_put(prog);
 
 	return err;
+}
+
+/**
+ *	dev_get_xdp - retrieve a bpf program for a device rx path
+ *	@dev: device
+ *	@flags: xdp-related flags
+ */
+struct bpf_prog *dev_get_xdp(struct net_device *dev, u32 flags)
+{
+	int (*xdp_op)(struct net_device *dev, struct netdev_xdp *xdp);
+	struct netdev_xdp xdp = {
+		.command = XDP_GET_PROG,
+	};
+	struct bpf_prog *prog = ERR_PTR(-ENOENT);
+	int rc;
+
+	rtnl_lock();
+
+	if (flags & XDP_FLAGS_SKB_MODE)
+		xdp_op = generic_xdp_install;
+	else if (dev->netdev_ops->ndo_xdp)
+		xdp_op = dev->netdev_ops->ndo_xdp;
+
+	rc = xdp_op(dev, &xdp);
+	if (!rc && xdp.prog)
+		prog = bpf_prog_inc(xdp.prog);
+
+	rtnl_unlock();
+
+	return prog;
 }
 
 /**

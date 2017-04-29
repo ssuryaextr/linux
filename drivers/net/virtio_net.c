@@ -1955,6 +1955,16 @@ virtio_reset_err:
 	return err;
 }
 
+static int virtnet_xdp_get(struct net_device *dev, struct bpf_prog **prog)
+{
+	struct virtnet_info *vi = netdev_priv(dev);
+
+	/* assumes same program for all queues */
+	*prog = rtnl_dereference(vi->rq[0].xdp_prog);
+
+	return 0;
+}
+
 static bool virtnet_xdp_query(struct net_device *dev)
 {
 	struct virtnet_info *vi = netdev_priv(dev);
@@ -1975,6 +1985,8 @@ static int virtnet_xdp(struct net_device *dev, struct netdev_xdp *xdp)
 	case XDP_QUERY_PROG:
 		xdp->prog_attached = virtnet_xdp_query(dev);
 		return 0;
+	case XDP_GET_PROG:
+		return virtnet_xdp_get(dev, &xdp->prog);
 	default:
 		return -EINVAL;
 	}

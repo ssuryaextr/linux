@@ -888,6 +888,43 @@ static int bpf_prog_get_cgroup(const union bpf_attr *attr)
 	return fd;
 }
 
+static int bpf_obj_get_netdev(const union bpf_attr *attr)
+{
+	struct net *net = current->nsproxy->net_ns;
+	u32 prog_type = attr->bpf_get_arg1;
+	u32 ifindex = attr->bpf_get_arg2;
+	u32 flags = attr->bpf_get_arg3;
+	struct bpf_prog *prog = NULL;
+	struct net_device *dev;
+	int fd;
+
+	dev = dev_get_by_index(net, ifindex);
+	if (!dev)
+		return -ENODEV;
+
+	fd = -ENOENT;
+	switch (prog_type) {
+	case BPF_PROG_TYPE_XDP:
+		prog = dev_get_xdp(dev, flags);
+		break;
+	}
+
+	dev_put(dev);
+
+	if (!prog)
+		return -ENOENT;
+
+	if (IS_ERR(prog))
+		return PTR_ERR(prog);
+
+	//if (bpf_prog_charge_memlock(raw))
+	fd = bpf_prog_new_fd(prog);
+	if (fd < 0)
+		bpf_prog_put(prog);
+
+	return fd;
+}
+
 struct bpf_prog *bpf_prog_add(struct bpf_prog *prog, int i)
 {
 	if (atomic_add_return(i, &prog->aux->refcnt) > BPF_MAX_REFCNT) {
@@ -1074,6 +1111,8 @@ static int bpf_obj_get(const union bpf_attr *attr)
 		return bpf_obj_get_pid(attr);
 	case BPF_GET_TYPE_CGROUP:
 		return bpf_prog_get_cgroup(attr);
+	case BPF_GET_TYPE_NETDEV:
+		return bpf_obj_get_netdev(attr);
 	}
 
 	return -EOPNOTSUPP;
