@@ -2198,7 +2198,7 @@ static void tile_net_dev_init(const char *name, const uint8_t *mac)
 	 * template, instantiated by register_netdev(), but not for us.
 	 */
 	dev = alloc_netdev_mqs(sizeof(*priv), name, NET_NAME_UNKNOWN,
-			       tile_net_setup, NR_CPUS, 1);
+			       tile_net_setup, NR_CPUS, 1, 0);
 	if (!dev) {
 		pr_err("alloc_netdev_mqs(%s) failed\n", name);
 		return;

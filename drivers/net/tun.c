@@ -1804,7 +1804,7 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 
 		dev = alloc_netdev_mqs(sizeof(struct tun_struct), name,
 				       NET_NAME_UNKNOWN, tun_setup, queues,
-				       queues);
+				       queues, 0);
 
 		if (!dev)
 			return -ENOMEM;

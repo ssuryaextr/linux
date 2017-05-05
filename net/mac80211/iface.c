@@ -1802,7 +1802,7 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 		ndev = alloc_netdev_mqs(size + txq_size,
 					name, name_assign_type,
-					if_setup, txqs, 1);
+					if_setup, txqs, 1, 0);
 		if (!ndev)
 			return -ENOMEM;
 		dev_net_set(ndev, wiphy_net(local->hw.wiphy));

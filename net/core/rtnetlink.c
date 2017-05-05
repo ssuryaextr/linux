@@ -2390,7 +2390,7 @@ struct net_device *rtnl_create_link(struct net *net,
 		num_rx_queues = ops->get_num_rx_queues();
 
 	dev = alloc_netdev_mqs(ops->priv_size, ifname, name_assign_type,
-			       ops->setup, num_tx_queues, num_rx_queues);
+			       ops->setup, num_tx_queues, num_rx_queues, 0);
 	if (!dev)
 		return ERR_PTR(-ENOMEM);
 

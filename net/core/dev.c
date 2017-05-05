@@ -7829,6 +7829,7 @@ void netdev_freemem(struct net_device *dev)
  * @setup: callback to initialize device
  * @txqs: the number of TX subqueues to allocate
  * @rxqs: the number of RX subqueues to allocate
+ * @flags: flags to 'or' with priv_flags
  *
  * Allocates a struct net_device with private data area for driver use
  * and performs basic initialization.  Also allocates subqueue structs
@@ -7837,7 +7838,8 @@ void netdev_freemem(struct net_device *dev)
 struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 		unsigned char name_assign_type,
 		void (*setup)(struct net_device *),
-		unsigned int txqs, unsigned int rxqs)
+		unsigned int txqs, unsigned int rxqs,
+		unsigned int flags)
 {
 	struct net_device *dev;
 	size_t alloc_size;
@@ -7920,6 +7922,7 @@ struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 	if (netif_alloc_rx_queues(dev))
 		goto free_all;
 #endif
+	dev->priv_flags |= flags;
 
 	strcpy(dev->name, name);
 	dev->name_assign_type = name_assign_type;

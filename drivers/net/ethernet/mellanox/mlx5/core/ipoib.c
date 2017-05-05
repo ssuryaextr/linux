@@ -446,7 +446,7 @@ static struct net_device *mlx5_rdma_netdev_alloc(struct mlx5_core_dev *mdev,
 				  name, NET_NAME_UNKNOWN,
 				  setup,
 				  nch * MLX5E_MAX_NUM_TC,
-				  nch);
+				  nch, 0);
 	if (!netdev) {
 		mlx5_core_warn(mdev, "alloc_netdev_mqs failed\n");
 		goto free_mdev_resources;

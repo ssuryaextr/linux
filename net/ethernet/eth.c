@@ -389,7 +389,7 @@ struct net_device *alloc_etherdev_mqs(int sizeof_priv, unsigned int txqs,
 				      unsigned int rxqs)
 {
 	return alloc_netdev_mqs(sizeof_priv, "eth%d", NET_NAME_UNKNOWN,
-				ether_setup, txqs, rxqs);
+				ether_setup, txqs, rxqs, 0);
 }
 EXPORT_SYMBOL(alloc_etherdev_mqs);
 
