@@ -4272,6 +4272,11 @@ static inline const char *netdev_reg_state(const struct net_device *dev)
 	return " (unknown)";
 }
 
+static inline struct kobject *netdev_kobject(struct net_device *dev)
+{
+	return &dev->dev.kobj;
+}
+
 __printf(3, 4)
 void netdev_printk(const char *level, const struct net_device *dev,
 		   const char *format, ...);

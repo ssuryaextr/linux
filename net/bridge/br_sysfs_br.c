@@ -917,9 +917,12 @@ static struct bin_attribute bridge_forward = {
  */
 int br_sysfs_addbr(struct net_device *dev)
 {
-	struct kobject *brobj = &dev->dev.kobj;
+	struct kobject *brobj = netdev_kobject(dev);
 	struct net_bridge *br = netdev_priv(dev);
 	int err;
+
+	if (!brobj)
+		return 0;
 
 	err = sysfs_create_group(brobj, &bridge_group);
 	if (err) {
@@ -944,9 +947,9 @@ int br_sysfs_addbr(struct net_device *dev)
 	}
 	return 0;
  out3:
-	sysfs_remove_bin_file(&dev->dev.kobj, &bridge_forward);
+	sysfs_remove_bin_file(brobj, &bridge_forward);
  out2:
-	sysfs_remove_group(&dev->dev.kobj, &bridge_group);
+	sysfs_remove_group(brobj, &bridge_group);
  out1:
 	return err;
 
@@ -954,10 +957,12 @@ int br_sysfs_addbr(struct net_device *dev)
 
 void br_sysfs_delbr(struct net_device *dev)
 {
-	struct kobject *kobj = &dev->dev.kobj;
+	struct kobject *kobj = netdev_kobject(dev);
 	struct net_bridge *br = netdev_priv(dev);
 
 	kobject_put(br->ifobj);
-	sysfs_remove_bin_file(kobj, &bridge_forward);
-	sysfs_remove_group(kobj, &bridge_group);
+	if (kobj) {
+		sysfs_remove_bin_file(kobj, &bridge_forward);
+		sysfs_remove_group(kobj, &bridge_group);
+	}
 }

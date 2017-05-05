@@ -485,6 +485,7 @@ int br_add_if(struct net_bridge *br, struct net_device *dev)
 	struct net_bridge_port *p;
 	int err = 0;
 	unsigned br_hr, dev_hr;
+	struct kobject *kobj;
 	bool changed_addr;
 
 	/* Don't allow bridging non-ethernet like devices, or DSA-enabled
@@ -521,10 +522,13 @@ int br_add_if(struct net_bridge *br, struct net_device *dev)
 	if (err)
 		goto put_back;
 
-	err = kobject_init_and_add(&p->kobj, &brport_ktype, &(dev->dev.kobj),
-				   SYSFS_BRIDGE_PORT_ATTR);
-	if (err)
-		goto err1;
+	kobj = netdev_kobject(dev);
+	if (kobj) {
+		err = kobject_init_and_add(&p->kobj, &brport_ktype, kobj,
+					   SYSFS_BRIDGE_PORT_ATTR);
+		if (err)
+			goto err1;
+	}
 
 	err = br_sysfs_addif(p);
 	if (err)

@@ -1122,6 +1122,7 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_registered_device *rdev;
 	struct cfg80211_sched_scan_request *pos, *tmp;
+	struct kobject *kobj;
 
 	if (!wdev)
 		return NOTIFY_DONE;
@@ -1160,9 +1161,12 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 		/* can only change netns with wiphy */
 		dev->features |= NETIF_F_NETNS_LOCAL;
 
-		if (sysfs_create_link(&dev->dev.kobj, &rdev->wiphy.dev.kobj,
-				      "phy80211")) {
-			pr_err("failed to add phy80211 symlink to netdev!\n");
+		kobj = netdev_kobject(dev);
+		if (kobj) {
+			if (sysfs_create_link(kobj, &rdev->wiphy.dev.kobj,
+					      "phy80211")) {
+				pr_err("failed to add phy80211 symlink to netdev!\n");
+			}
 		}
 		wdev->netdev = dev;
 #ifdef CONFIG_CFG80211_WEXT
@@ -1264,9 +1268,12 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 		 * remove and clean it up.
 		 */
 		if (!list_empty(&wdev->list)) {
+			struct kobject *kobj = netdev_kobject(dev);
+
 			nl80211_notify_iface(rdev, wdev,
 					     NL80211_CMD_DEL_INTERFACE);
-			sysfs_remove_link(&dev->dev.kobj, "phy80211");
+			if (kobj)
+				sysfs_remove_link(kobj, "phy80211");
 			list_del_rcu(&wdev->list);
 			rdev->devlist_generation++;
 			cfg80211_mlme_purge_registrations(wdev);

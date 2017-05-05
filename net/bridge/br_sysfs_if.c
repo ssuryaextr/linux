@@ -283,10 +283,14 @@ int br_sysfs_addif(struct net_bridge_port *p)
 {
 	struct net_bridge *br = p->br;
 	const struct brport_attribute **a;
+	struct kobject *br_kobj;
 	int err;
 
-	err = sysfs_create_link(&p->kobj, &br->dev->dev.kobj,
-				SYSFS_BRIDGE_PORT_LINK);
+	br_kobj = netdev_kobject(br->dev);
+	if (!br_kobj)
+		return 0;
+
+	err = sysfs_create_link(&p->kobj, br_kobj, SYSFS_BRIDGE_PORT_LINK);
 	if (err)
 		return err;
 

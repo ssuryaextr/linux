@@ -5910,22 +5910,33 @@ static int netdev_adjacent_sysfs_add(struct net_device *dev,
 			      struct net_device *adj_dev,
 			      struct list_head *dev_list)
 {
+	struct kobject *dev_kobj, *adj_kobj;
 	char linkname[IFNAMSIZ+7];
+	int rc = 0;
 
-	sprintf(linkname, dev_list == &dev->adj_list.upper ?
-		"upper_%s" : "lower_%s", adj_dev->name);
-	return sysfs_create_link(&(dev->dev.kobj), &(adj_dev->dev.kobj),
-				 linkname);
+	dev_kobj = netdev_kobject(dev);
+	adj_kobj = netdev_kobject(adj_dev);
+
+	if (dev_kobj && adj_kobj) {
+		sprintf(linkname, dev_list == &dev->adj_list.upper ?
+			"upper_%s" : "lower_%s", adj_dev->name);
+		rc = sysfs_create_link(dev_kobj, adj_kobj, linkname);
+	}
+	return rc;
 }
+
 static void netdev_adjacent_sysfs_del(struct net_device *dev,
 			       char *name,
 			       struct list_head *dev_list)
 {
+	struct kobject *kobj = netdev_kobject(dev);
 	char linkname[IFNAMSIZ+7];
 
-	sprintf(linkname, dev_list == &dev->adj_list.upper ?
-		"upper_%s" : "lower_%s", name);
-	sysfs_remove_link(&(dev->dev.kobj), linkname);
+	if (kobj) {
+		sprintf(linkname, dev_list == &dev->adj_list.upper ?
+			"upper_%s" : "lower_%s", name);
+		sysfs_remove_link(kobj, linkname);
+	}
 }
 
 static inline bool netdev_adjacent_is_neigh_list(struct net_device *dev,
@@ -5976,11 +5987,14 @@ static int __netdev_adjacent_dev_insert(struct net_device *dev,
 
 	/* Ensure that master link is always the first item in list. */
 	if (master) {
-		ret = sysfs_create_link(&(dev->dev.kobj),
-					&(adj_dev->dev.kobj), "master");
-		if (ret)
-			goto remove_symlinks;
+		struct kobject *dev_kobj = netdev_kobject(dev);
+		struct kobject *adj_kobj = netdev_kobject(adj_dev);
 
+		if (dev_kobj && adj_kobj) {
+			ret = sysfs_create_link(dev_kobj, adj_kobj, "master");
+			if (ret)
+				goto remove_symlinks;
+		}
 		list_add_rcu(&adj->list, dev_list);
 	} else {
 		list_add_tail_rcu(&adj->list, dev_list);
@@ -6025,8 +6039,12 @@ static void __netdev_adjacent_dev_remove(struct net_device *dev,
 		return;
 	}
 
-	if (adj->master)
-		sysfs_remove_link(&(dev->dev.kobj), "master");
+	if (adj->master) {
+		struct kobject *kobj = netdev_kobject(dev);
+
+		if (kobj)
+			sysfs_remove_link(kobj, "master");
+	}
 
 	if (netdev_adjacent_is_neigh_list(dev, adj_dev, dev_list))
 		netdev_adjacent_sysfs_del(dev, adj_dev->name, dev_list);
@@ -7665,6 +7683,7 @@ void netdev_run_todo(void)
 		rcu_barrier();
 
 	while (!list_empty(&list)) {
+		struct kobject *kobj;
 		struct net_device *dev
 			= list_first_entry(&list, struct net_device, todo_list);
 		list_del(&dev->todo_list);
@@ -7702,7 +7721,9 @@ void netdev_run_todo(void)
 		wake_up(&netdev_unregistering_wq);
 
 		/* Free network device */
-		kobject_put(&dev->dev.kobj);
+		kobj = netdev_kobject(dev);
+		if (kobj)
+			kobject_put(kobj);
 	}
 }
 
@@ -8071,6 +8092,7 @@ EXPORT_SYMBOL(unregister_netdev);
 
 int dev_change_net_namespace(struct net_device *dev, struct net *net, const char *pat)
 {
+	struct kobject *kobj;
 	int err;
 
 	ASSERT_RTNL();
@@ -8136,7 +8158,9 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 	dev_mc_flush(dev);
 
 	/* Send a netdev-removed uevent to the old namespace */
-	kobject_uevent(&dev->dev.kobj, KOBJ_REMOVE);
+	kobj = netdev_kobject(dev);
+	if (kobj)
+		kobject_uevent(kobj, KOBJ_REMOVE);
 	netdev_adjacent_del_links(dev);
 
 	/* Actually switch the network namespace */
@@ -8147,7 +8171,8 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 		dev->ifindex = dev_new_index(net);
 
 	/* Send a netdev-add uevent to the new namespace */
-	kobject_uevent(&dev->dev.kobj, KOBJ_ADD);
+	if (kobj)
+		kobject_uevent(kobj, KOBJ_ADD);
 	netdev_adjacent_add_links(dev);
 
 	/* Fixup kobjects */

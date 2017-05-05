@@ -735,10 +735,13 @@ static struct batadv_attribute *batadv_vlan_attrs[] = {
 
 int batadv_sysfs_add_meshif(struct net_device *dev)
 {
-	struct kobject *batif_kobject = &dev->dev.kobj;
+	struct kobject *batif_kobject = netdev_kobject(dev);
 	struct batadv_priv *bat_priv = netdev_priv(dev);
 	struct batadv_attribute **bat_attr;
 	int err;
+
+	if (!batif_kobject)
+		return 0;
 
 	bat_priv->mesh_obj = kobject_create_and_add(BATADV_SYSFS_IF_MESH_SUBDIR,
 						    batif_kobject);
@@ -777,6 +780,9 @@ void batadv_sysfs_del_meshif(struct net_device *dev)
 {
 	struct batadv_priv *bat_priv = netdev_priv(dev);
 	struct batadv_attribute **bat_attr;
+
+	if (!bat_priv->mesh_obj)
+		return;
 
 	for (bat_attr = batadv_mesh_attrs; *bat_attr; ++bat_attr)
 		sysfs_remove_file(bat_priv->mesh_obj, &((*bat_attr)->attr));
@@ -1132,9 +1138,12 @@ static struct batadv_attribute *batadv_batman_attrs[] = {
 
 int batadv_sysfs_add_hardif(struct kobject **hardif_obj, struct net_device *dev)
 {
-	struct kobject *hardif_kobject = &dev->dev.kobj;
+	struct kobject *hardif_kobject = netdev_kobject(dev);
 	struct batadv_attribute **bat_attr;
 	int err;
+
+	if (!hardif_kobject)
+		return 0;
 
 	*hardif_obj = kobject_create_and_add(BATADV_SYSFS_IF_BAT_SUBDIR,
 					     hardif_kobject);
