@@ -4144,6 +4144,11 @@ static inline bool netif_is_lwd(struct net_device *dev)
 	return !!(dev->priv_flags & IFF_LWT_NETDEV);
 }
 
+static inline bool netif_has_sysctl(struct net_device *dev)
+{
+	return !netif_is_lwd(dev);
+}
+
 static inline bool netif_is_macsec(const struct net_device *dev)
 {
 	return dev->priv_flags & IFF_MACSEC;
