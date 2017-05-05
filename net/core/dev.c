@@ -7993,7 +7993,8 @@ void free_netdev(struct net_device *dev)
 	dev->reg_state = NETREG_RELEASED;
 
 	/* will free via device release */
-	put_device(&dev->dev);
+	if (!netif_is_lwd(dev))
+		put_device(&dev->dev);
 }
 EXPORT_SYMBOL(free_netdev);
 
@@ -8179,8 +8180,10 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 	netdev_adjacent_add_links(dev);
 
 	/* Fixup kobjects */
-	err = device_rename(&dev->dev, dev->name);
-	WARN_ON(err);
+	if (!netif_is_lwd(dev)) {
+		err = device_rename(&dev->dev, dev->name);
+		WARN_ON(err);
+	}
 
 	/* Add the device back in the hashes */
 	list_netdevice(dev);

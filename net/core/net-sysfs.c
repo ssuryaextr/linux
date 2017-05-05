@@ -1559,18 +1559,22 @@ EXPORT_SYMBOL(of_find_net_device_by_node);
  */
 void netdev_unregister_kobject(struct net_device *ndev)
 {
+	struct kobject *kobj = netdev_kobject(ndev);
 	struct device *dev = &(ndev->dev);
 
 	if (!atomic_read(&dev_net(ndev)->count))
 		dev_set_uevent_suppress(dev, 1);
 
-	kobject_get(&dev->kobj);
+	if (kobj)
+		kobject_get(kobj);
 
-	remove_queue_kobjects(ndev);
+	if (!netif_is_lwd(ndev))
+		remove_queue_kobjects(ndev);
 
 	pm_runtime_set_memalloc_noio(dev, false);
 
-	device_del(dev);
+	if (!netif_is_lwd(ndev))
+		device_del(dev);
 }
 
 /* Create sysfs entries for network device. */
@@ -1579,6 +1583,9 @@ int netdev_register_kobject(struct net_device *ndev)
 	struct device *dev = &(ndev->dev);
 	const struct attribute_group **groups = ndev->sysfs_groups;
 	int error = 0;
+
+	if (netif_is_lwd(ndev))
+		goto pm;
 
 	device_initialize(dev);
 	dev->class = &net_class;
@@ -1614,6 +1621,7 @@ int netdev_register_kobject(struct net_device *ndev)
 		return error;
 	}
 
+pm:
 	pm_runtime_set_memalloc_noio(dev, true);
 
 	return error;

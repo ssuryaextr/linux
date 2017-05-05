@@ -4282,6 +4282,9 @@ static inline const char *netdev_reg_state(const struct net_device *dev)
 
 static inline struct kobject *netdev_kobject(struct net_device *dev)
 {
+	if (netif_is_lwd(dev))
+		return NULL;
+
 	return &dev->dev.kobj;
 }
 
