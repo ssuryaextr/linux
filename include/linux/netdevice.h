@@ -1401,6 +1401,7 @@ enum netdev_priv_flags {
 	IFF_RXFH_CONFIGURED		= 1<<25,
 	IFF_PHONY_HEADROOM		= 1<<26,
 	IFF_MACSEC			= 1<<27,
+	IFF_LWT_NETDEV			= 1<<28,
 };
 
 #define IFF_802_1Q_VLAN			IFF_802_1Q_VLAN
@@ -1430,6 +1431,7 @@ enum netdev_priv_flags {
 #define IFF_TEAM			IFF_TEAM
 #define IFF_RXFH_CONFIGURED		IFF_RXFH_CONFIGURED
 #define IFF_MACSEC			IFF_MACSEC
+#define IFF_LWT_NETDEV			IFF_LWT_NETDEV
 
 /**
  *	struct net_device - The DEVICE structure.
@@ -4135,6 +4137,11 @@ static inline void skb_gso_error_unwind(struct sk_buff *skb, __be16 protocol,
 	skb->mac_header = mac_offset;
 	skb->network_header = skb->mac_header + mac_len;
 	skb->mac_len = mac_len;
+}
+
+static inline bool netif_is_lwd(struct net_device *dev)
+{
+	return !!(dev->priv_flags & IFF_LWT_NETDEV);
 }
 
 static inline bool netif_is_macsec(const struct net_device *dev)
