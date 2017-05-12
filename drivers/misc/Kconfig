@@ -459,6 +459,34 @@ config USB_SWITCH_FSA9480
 	  stereo and mono audio, video, microphone and UART data to use
 	  a common connector port.
 
+config EARLY_DMA_ALLOC
+	bool "Early DMA Memory Allocator"
+	depends on HAS_DMA
+
+	---help---
+	  This driver locks down a region of DMA accessible memory
+          early in the boot process.  This memory can be used by other
+          drivers that might rmmod/insmod, insuring the memory region
+          does not become fragmented.
+
+config EDA_DEF_SIZE
+	hex "EDA Default Region Size"
+	depends on EARLY_DMA_ALLOC
+	default 0x04000000
+	help
+	  Default size of the reserved memory pool, if not altered by the
+	  open firmware interface or kernel boot parameter. This memory
+	  will not be accessable to the rest of the system. Default is
+	  64MB.
+
+config EDA_DEF_ALIGN
+	hex "EDA Default Alignment"
+	depends on EARLY_DMA_ALLOC
+	default 0x00100000
+	help
+	  Default alignment of the memory region. Default is 1MB.
+
+
 config LATTICE_ECP3_CONFIG
 	tristate "Lattice ECP3 FPGA bitstream configuration via SPI"
 	depends on SPI && SYSFS

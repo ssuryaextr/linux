@@ -49,6 +49,7 @@
 #include <asm/pci-direct.h>
 #include <linux/init_ohci1394_dma.h>
 #include <linux/kvm_para.h>
+#include <linux/early_dma_alloc.h>
 #include <linux/dma-contiguous.h>
 
 #include <linux/errno.h>
@@ -1297,6 +1298,10 @@ void __init setup_arch(char **cmdline_p)
 	mcheck_init();
 
 	arch_init_ideal_nops();
+
+#ifdef CONFIG_EARLY_DMA_ALLOC
+	eda_init();
+#endif
 
 	register_refined_jiffies(CLOCK_TICK_RATE);
 
