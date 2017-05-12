@@ -339,6 +339,15 @@ static s32 igb_init_phy_params_82575(struct e1000_hw *hw)
 		phy->ops.set_d3_lplu_state = igb_set_d3_lplu_state_82580;
 		phy->ops.force_speed_duplex = igb_phy_force_speed_duplex_m88;
 		break;
+	case BCM5461S_PHY_ID:
+		phy->type		= e1000_phy_bcm5461s;
+		phy->ops.check_polarity	= NULL;
+		phy->ops.get_cable_length = NULL;
+		phy->ops.force_speed_duplex = igb_phy_force_speed_duplex_82580;
+		break;
+	case BCM54616_E_PHY_ID:
+		phy->type = e1000_phy_bcm54616;
+		break;
 	default:
 		ret_val = -E1000_ERR_PHY;
 		goto out;
@@ -898,6 +907,16 @@ static s32 igb_get_phy_id_82575(struct e1000_hw *hw)
 			goto out;
 		}
 		ret_val = igb_get_phy_id(hw);
+		if (ret_val && hw->mac.type == e1000_i354) {
+			/* we do a special check for bcm5461s phy by setting
+			 * the phy->addr to 5 and doing the phy check again. This
+			 * call will succeed and retrieve a valid phy id if we have
+			 * the bcm5461s phy
+			 */
+			phy->addr = 5;
+			phy->type = e1000_phy_bcm5461s;
+			ret_val = igb_get_phy_id(hw);
+		}
 		goto out;
 	}
 
@@ -1285,6 +1304,9 @@ static s32 igb_get_cfg_done_82575(struct e1000_hw *hw)
 	    (hw->phy.type == e1000_phy_igp_3))
 		igb_phy_init_script_igp3(hw);
 
+	if (hw->phy.type == e1000_phy_bcm5461s)
+		igb_phy_init_script_5461s(hw);
+
 	return 0;
 }
 
@@ -1614,6 +1636,7 @@ static s32 igb_setup_copper_link_82575(struct e1000_hw *hw)
 	case e1000_i350:
 	case e1000_i210:
 	case e1000_i211:
+	case e1000_i354:
 		phpm_reg = rd32(E1000_82580_PHY_POWER_MGMT);
 		phpm_reg &= ~E1000_82580_PM_GO_LINKD;
 		wr32(E1000_82580_PHY_POWER_MGMT, phpm_reg);
@@ -1657,6 +1680,10 @@ static s32 igb_setup_copper_link_82575(struct e1000_hw *hw)
 		break;
 	case e1000_phy_82580:
 		ret_val = igb_copper_link_setup_82580(hw);
+		break;
+	case e1000_phy_bcm54616:
+		break;
+	case e1000_phy_bcm5461s:
 		break;
 	default:
 		ret_val = -E1000_ERR_PHY;

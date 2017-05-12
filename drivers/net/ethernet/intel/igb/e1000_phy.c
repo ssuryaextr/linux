@@ -146,6 +146,13 @@ s32 igb_read_phy_reg_mdic(struct e1000_hw *hw, u32 offset, u16 *data)
 	 * Control register.  The MAC will take care of interfacing with the
 	 * PHY to retrieve the desired data.
 	 */
+	if (phy->type == e1000_phy_bcm5461s) {
+		mdic = rd32(E1000_MDICNFG);
+		mdic &= ~E1000_MDICNFG_PHY_MASK;
+		mdic |= (phy->addr << E1000_MDICNFG_PHY_SHIFT);
+		wr32(E1000_MDICNFG, mdic);
+	}
+
 	mdic = ((offset << E1000_MDIC_REG_SHIFT) |
 		(phy->addr << E1000_MDIC_PHY_SHIFT) |
 		(E1000_MDIC_OP_READ));
@@ -202,6 +209,13 @@ s32 igb_write_phy_reg_mdic(struct e1000_hw *hw, u32 offset, u16 data)
 	 * Control register.  The MAC will take care of interfacing with the
 	 * PHY to retrieve the desired data.
 	 */
+	if (phy->type == e1000_phy_bcm5461s) {
+		mdic = rd32(E1000_MDICNFG);
+		mdic &= ~E1000_MDICNFG_PHY_MASK;
+		mdic |= (phy->addr << E1000_MDICNFG_PHY_SHIFT);
+		wr32(E1000_MDICNFG, mdic);
+	}
+
 	mdic = (((u32)data) |
 		(offset << E1000_MDIC_REG_SHIFT) |
 		(phy->addr << E1000_MDIC_PHY_SHIFT) |
@@ -1113,10 +1127,12 @@ s32 igb_setup_copper_link(struct e1000_hw *hw)
 		 * depending on user settings.
 		 */
 		hw_dbg("Forcing Speed and Duplex\n");
-		ret_val = hw->phy.ops.force_speed_duplex(hw);
-		if (ret_val) {
-			hw_dbg("Error Forcing Speed and Duplex\n");
-			goto out;
+		if (hw->phy.ops.force_speed_duplex) {
+			ret_val = hw->phy.ops.force_speed_duplex(hw);
+			if (ret_val) {
+				hw_dbg("Error Forcing Speed and Duplex\n");
+				goto out;
+			}
 		}
 	}
 
@@ -2646,4 +2662,67 @@ static s32 igb_set_master_slave_mode(struct e1000_hw *hw)
 	}
 
 	return hw->phy.ops.write_reg(hw, PHY_1000T_CTRL, phy_data);
+}
+
+/**
+ *  igb_phy_init_script_5461s - Inits the BCM5461S PHY
+ *  @hw: pointer to the HW structure
+ *
+ *  Initializes a Broadcom Gigabit PHY.
+ **/
+s32 igb_phy_init_script_5461s(struct e1000_hw *hw)
+{
+	u16 mii_reg_led = 0;
+
+	/* 1. Speed LED (Set the Link LED mode), Shadow 00010, 0x1C.bit2=1 */
+	hw->phy.ops.write_reg(hw, 0x1C, 0x0800);
+	hw->phy.ops.read_reg(hw, 0x1C, &mii_reg_led);
+	mii_reg_led |= 0x0004;
+	hw->phy.ops.write_reg(hw, 0x1C, mii_reg_led | 0x8000);
+
+	/* 2. Active LED (Set the Link LED mode), Shadow 01001, 0x1C.bit4=1, 0x10.bit5=0 */
+	hw->phy.ops.write_reg(hw, 0x1C, 0x2400);
+	hw->phy.ops.read_reg(hw, 0x1C, &mii_reg_led);
+	mii_reg_led |= 0x0010;
+	hw->phy.ops.write_reg(hw, 0x1C, mii_reg_led | 0x8000);
+	hw->phy.ops.read_reg(hw, 0x10, &mii_reg_led);
+	mii_reg_led &= 0xffdf;
+	hw->phy.ops.write_reg(hw, 0x10, mii_reg_led);
+
+	return 0;
+}
+
+/**
+ *  igb_get_phy_info_5461s - Retrieve 5461s PHY information
+ *  @hw: pointer to the HW structure
+ *
+ *  Read PHY status to determine if link is up.  If link is up, then
+ *  set/determine 10base-T extended distance and polarity correction.  Read
+ *  PHY port status to determine MDI/MDIx and speed.  Based on the speed,
+ *  determine on the cable length, local and remote receiver.
+ **/
+s32 igb_get_phy_info_5461s(struct e1000_hw *hw)
+{
+	struct e1000_phy_info *phy = &hw->phy;
+	s32 ret_val;
+	bool link;
+
+	ret_val = igb_phy_has_link(hw, 1, 0, &link);
+	if (ret_val)
+		goto out;
+
+	if (!link) {
+		ret_val = -E1000_ERR_CONFIG;
+		goto out;
+	}
+
+	phy->polarity_correction = true;
+
+	phy->is_mdix = true;
+	phy->cable_length = E1000_CABLE_LENGTH_UNDEFINED;
+	phy->local_rx = e1000_1000t_rx_status_ok;
+	phy->remote_rx = e1000_1000t_rx_status_ok;
+
+out:
+	return ret_val;
 }
