@@ -1,5 +1,16 @@
 menu "EEPROM support"
 
+config EEPROM_CLASS
+	tristate "EEPROM Hardware Class support"
+	depends on SYSFS
+	default y
+	help
+	  Creates a hardware class in sysfs called "eeprom_dev",
+	  providing a common place to register EEPROM devices.
+
+	  This support can also be built as a module.  If so, the module
+	  will be called eeprom_class.
+
 config EEPROM_AT24
 	tristate "I2C EEPROMs / RAMs / ROMs from most vendors"
 	depends on I2C && SYSFS
