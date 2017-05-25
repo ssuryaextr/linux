@@ -86,6 +86,11 @@ struct pmbus_label {
 #define to_pmbus_label(_attr) \
 	container_of(_attr, struct pmbus_label, attribute)
 
+struct pmbus_mfr {
+	char name[PMBUS_NAME_SIZE];	/* sysfs mfr name */
+	struct device_attribute attribute;
+};
+
 struct pmbus_data {
 	struct device *dev;
 	struct device *hwmon_dev;
@@ -790,6 +795,31 @@ static ssize_t pmbus_show_sensor(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%ld\n", pmbus_reg2data(data, sensor));
 }
 
+static ssize_t pmbus_show_mfr(struct device *dev,
+				   struct device_attribute *da,
+				   char *buf) {
+	struct i2c_client *client = to_i2c_client(dev);
+	int cmd = to_sensor_dev_attr(da)->index;
+	u8 b_buf[I2C_SMBUS_BLOCK_MAX + 1];
+	int ret;
+
+	if (i2c_check_functionality(client->adapter,
+				    I2C_FUNC_SMBUS_READ_BLOCK_DATA))
+		ret = i2c_smbus_read_block_data(client, cmd, b_buf);
+	else if (i2c_check_functionality(client->adapter,
+				    I2C_FUNC_SMBUS_READ_I2C_BLOCK))
+		ret = i2c_smbus_read_i2c_block_data(client, cmd,
+				    I2C_SMBUS_BLOCK_MAX, b_buf);
+	else
+		ret = -EIO;
+
+	if (ret < 0)
+		return ret;
+
+	b_buf[ret] = '\0';
+	return sprintf(buf, "%s\n", b_buf);
+};
+
 static ssize_t pmbus_set_sensor(struct device *dev,
 				struct device_attribute *devattr,
 				const char *buf, size_t count)
@@ -919,7 +949,6 @@ static struct pmbus_sensor *pmbus_add_sensor(struct pmbus_data *data,
 	else
 		snprintf(sensor->name, sizeof(sensor->name), "%s%d_%s",
 			 name, seq, type);
-
 	sensor->page = page;
 	sensor->reg = reg;
 	sensor->class = class;
@@ -961,6 +990,23 @@ static int pmbus_add_label(struct pmbus_data *data,
 	return pmbus_add_attribute(data, &a->attr);
 }
 
+
+static int pmbus_add_mfr(struct pmbus_data *data, const char *name,
+			 int index)
+{
+	struct pmbus_mfr *mfr;
+	struct device_attribute *a;
+
+	mfr = devm_kzalloc(data->dev, sizeof(*mfr), GFP_KERNEL);
+	if (!mfr)
+		return -ENOMEM;
+
+	a = &mfr->attribute;
+
+	snprintf(mfr->name, sizeof(mfr->name), "%s%d", name, index);
+	pmbus_dev_attr_init(a, mfr->name, S_IRUGO, pmbus_show_mfr, NULL);
+	return pmbus_add_attribute(data, &a->attr);
+}
 /*
  * Search for attributes. Allocate sensors, booleans, and labels as needed.
  */
@@ -1689,6 +1735,24 @@ static int pmbus_add_fan_attributes(struct i2c_client *client,
 	return 0;
 }
 
+/* Manufacturer Info */
+static int pmbus_add_mfr_attributes(struct i2c_client *client,
+				     struct pmbus_data *data)
+{
+	const struct pmbus_driver_info *info = data->info;
+
+	/* Only Read Page 0 mfr info */
+	if (info->func[0] & PMBUS_HAVE_MFR_INFO) {
+		pmbus_add_mfr(data, "mfr_id", PMBUS_MFR_ID);
+		pmbus_add_mfr(data, "mfr_model", PMBUS_MFR_MODEL);
+		pmbus_add_mfr(data, "mfr_revision", PMBUS_MFR_REVISION);
+		pmbus_add_mfr(data, "mfr_location", PMBUS_MFR_LOCATION);
+		pmbus_add_mfr(data, "mfr_date", PMBUS_MFR_DATE);
+		pmbus_add_mfr(data, "mfr_serial", PMBUS_MFR_SERIAL);
+	}
+	return 0;
+}
+
 static int pmbus_find_attributes(struct i2c_client *client,
 				 struct pmbus_data *data)
 {
@@ -1720,6 +1784,12 @@ static int pmbus_find_attributes(struct i2c_client *client,
 
 	/* Fans */
 	ret = pmbus_add_fan_attributes(client, data);
+	if (ret)
+		return ret;
+
+	/* Manufacturer Info */
+	ret = pmbus_add_mfr_attributes(client, data);
+
 	return ret;
 }
 
