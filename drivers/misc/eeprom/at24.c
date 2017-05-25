@@ -24,6 +24,7 @@
 #include <linux/i2c.h>
 #include <linux/nvmem-provider.h>
 #include <linux/platform_data/at24.h>
+#include <linux/eeprom_class.h>
 
 /*
  * I2C EEPROMs from most vendors are inexpensive and mostly interchangeable.
@@ -71,6 +72,8 @@ struct at24_data {
 	u8 *writebuf;
 	unsigned write_max;
 	unsigned num_addresses;
+
+	struct eeprom_device *eeprom_dev;
 
 	struct nvmem_config nvmem_config;
 	struct nvmem_device *nvmem;
@@ -618,6 +621,7 @@ static int at24_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 		chip.setup = NULL;
 		chip.context = NULL;
+		chip.eeprom_data = NULL;
 	}
 
 	if (!is_power_of_2(chip.byte_len))
@@ -767,6 +771,13 @@ static int at24_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 	if (IS_ERR(at24->nvmem)) {
 		err = PTR_ERR(at24->nvmem);
+		goto err_clients;
+	}
+
+	at24->eeprom_dev = eeprom_device_register(&client->dev, chip.eeprom_data);
+	if (IS_ERR(at24->eeprom_dev)) {
+		dev_err(&client->dev, "error registering eeprom device.\n");
+		err = PTR_ERR(at24->eeprom_dev);
 		goto err_clients;
 	}
 

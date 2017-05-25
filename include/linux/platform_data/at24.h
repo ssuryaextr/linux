@@ -11,6 +11,7 @@
 #include <linux/types.h>
 #include <linux/nvmem-consumer.h>
 #include <linux/bitops.h>
+#include <linux/eeprom_class.h>
 
 /**
  * struct at24_platform_data - data to set up at24 (generic eeprom) driver
@@ -50,9 +51,11 @@ struct at24_platform_data {
 #define AT24_FLAG_TAKE8ADDR	BIT(4)	/* take always 8 addresses (24c00) */
 #define AT24_FLAG_SERIAL	BIT(3)	/* factory-programmed serial number */
 #define AT24_FLAG_MAC		BIT(2)	/* factory-programmed mac address */
+#define AT24_FLAG_DISABLE_I2CBLOCK BIT(1) /*disable smbus i2c block access */
 
 	void		(*setup)(struct nvmem_device *nvmem, void *context);
 	void		*context;
+	struct eeprom_platform_data *eeprom_data; /* extra data for the eeprom_class */
 };
 
 #endif /* _LINUX_AT24_H */
