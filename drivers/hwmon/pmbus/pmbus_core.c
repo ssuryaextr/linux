@@ -446,12 +446,23 @@ static long pmbus_reg2data_linear(struct pmbus_data *data,
 	if (sensor->class == PSC_VOLTAGE_OUT) {	/* LINEAR16 */
 		exponent = data->exponent[sensor->page];
 		mantissa = (u16) sensor->data;
+	} else if (sensor->class == PSC_PWM) {
+		/* PWM has a duty cycle value from 0 to 100 */
+		mantissa = (u16) sensor->data;
+		exponent = 0;
 	} else {				/* LINEAR11 */
 		exponent = ((s16)sensor->data) >> 11;
 		mantissa = ((s16)((sensor->data & 0x7ff) << 5)) >> 5;
 	}
 
 	val = mantissa;
+
+	/* Map duty cycle 0 -> 100 to PWM range 0 -> 255 */
+	if (sensor->class == PSC_PWM) {
+		val = (val * 255)/100;
+		val = clamp_val(val, 0, 255);
+		return val;
+	}
 
 	/* scale result to milli-units for all sensors except fans */
 	if (sensor->class != PSC_FAN)
@@ -566,6 +577,13 @@ static u16 pmbus_data2reg_linear(struct pmbus_data *data,
 	/* simple case */
 	if (val == 0)
 		return 0;
+
+	/* Map PWM range 0 -> 255 to duty cycle 0 -> 100 */
+	if (sensor->class == PSC_PWM) {
+		val = (val * 100)/255;
+		val = clamp_val(val, 0, 100);
+		return val;
+	}
 
 	if (sensor->class == PSC_VOLTAGE_OUT) {
 		/* LINEAR16 does not support negative voltages */
@@ -895,8 +913,13 @@ static struct pmbus_sensor *pmbus_add_sensor(struct pmbus_data *data,
 		return NULL;
 	a = &sensor->attribute;
 
-	snprintf(sensor->name, sizeof(sensor->name), "%s%d_%s",
-		 name, seq, type);
+	if (!(strcmp("pwm", name)))
+		snprintf(sensor->name, sizeof(sensor->name), "%s%d",
+			 name, seq);
+	else
+		snprintf(sensor->name, sizeof(sensor->name), "%s%d_%s",
+			 name, seq, type);
+
 	sensor->page = page;
 	sensor->reg = reg;
 	sensor->class = class;
@@ -1565,6 +1588,13 @@ static const int pmbus_fan_config_registers[] = {
 	PMBUS_FAN_CONFIG_34
 };
 
+static const int pmbus_fan_cmd_registers[] = {
+	PMBUS_FAN_COMMAND_1,
+	PMBUS_FAN_COMMAND_2,
+	PMBUS_FAN_COMMAND_3,
+	PMBUS_FAN_COMMAND_4,
+};
+
 static const int pmbus_fan_status_registers[] = {
 	PMBUS_STATUS_FAN_12,
 	PMBUS_STATUS_FAN_12,
@@ -1622,6 +1652,11 @@ static int pmbus_add_fan_attributes(struct i2c_client *client,
 			if (pmbus_add_sensor(data, "fan", "input", index,
 					     page, pmbus_fan_registers[f],
 					     PSC_FAN, true, true) == NULL)
+				return -ENOMEM;
+
+			if (pmbus_add_sensor(data, "pwm", "", index,
+					     page, pmbus_fan_cmd_registers[f],
+					     PSC_PWM, true, false) == NULL)
 				return -ENOMEM;
 
 			/*
