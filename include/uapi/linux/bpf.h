@@ -793,8 +793,10 @@ struct bpf_prog_info {
 	__u32 type;
 	__u32 id;
 	__u8  tag[BPF_TAG_SIZE];
+	__u32 orig_prog_len;
 	__u32 jited_prog_len;
 	__u32 xlated_prog_len;
+	__aligned_u64 orig_prog_insns;
 	__aligned_u64 jited_prog_insns;
 	__aligned_u64 xlated_prog_insns;
 } __attribute__((aligned(8)));
