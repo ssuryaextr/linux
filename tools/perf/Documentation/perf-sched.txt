@@ -162,6 +162,15 @@ OPTIONS for 'perf sched timehist'
 --state::
 	Show task state when it switched out.
 
+-T::
+--pstree::
+    Show only a parent-child process tree with runtime per task in msec.
+
+-P::
+--with-pstree::
+    Show all scheduling events followed by a parent-child process tree with
+    runtime per task in msec.
+
 SEE ALSO
 --------
 linkperf:perf-record[1]
