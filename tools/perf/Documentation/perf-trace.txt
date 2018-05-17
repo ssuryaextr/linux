@@ -51,6 +51,10 @@ filter out the startup phase of the program, which is often very different.
 --output=::
 	Output file name.
 
+-c::
+--comms=::
+	Only display events for given comms (comma separated list).
+
 -p::
 --pid=::
 	Record events on existing process ID (comma separated list).
