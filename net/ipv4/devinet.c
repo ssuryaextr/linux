@@ -798,8 +798,15 @@ static struct in_ifaddr *rtm_to_ifaddr(struct net *net, struct nlmsghdr *nlh,
 
 	in_dev = __in_dev_get_rtnl(dev);
 	err = -ENOBUFS;
-	if (!in_dev)
-		goto errout;
+	if (!in_dev) {
+		if (netif_is_lwt(dev)) {
+			in_dev = inetdev_init(dev);
+			if (IS_ERR(in_dev))
+				in_dev = NULL;
+		}
+		if (!in_dev)
+			goto errout;
+	}
 
 	ifa = inet_alloc_ifa();
 	if (!ifa)
@@ -1453,6 +1460,10 @@ static int inetdev_event(struct notifier_block *this, unsigned long event,
 
 	if (!in_dev) {
 		if (event == NETDEV_REGISTER) {
+			/* inet init is deferred for lightweight devices */
+			if (netif_is_lwt(dev))
+				goto out;
+
 			in_dev = inetdev_init(dev);
 			if (IS_ERR(in_dev))
 				return notifier_from_errno(PTR_ERR(in_dev));
@@ -2339,6 +2350,9 @@ static void __devinet_sysctl_unregister(struct net *net,
 static int devinet_sysctl_register(struct in_device *idev)
 {
 	int err;
+
+	if (!netif_has_sysctl(idev->dev))
+		return 0;
 
 	if (!sysctl_dev_name_is_allowed(idev->dev->name))
 		return -EINVAL;

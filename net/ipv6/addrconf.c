@@ -3412,6 +3412,10 @@ static int addrconf_notify(struct notifier_block *this, unsigned long event,
 
 	switch (event) {
 	case NETDEV_REGISTER:
+		/* inet6 init is deferred for lightweight devices */
+		if (netif_is_lwt(dev))
+			return NOTIFY_OK;
+
 		if (!idev && dev->mtu >= IPV6_MIN_MTU) {
 			idev = ipv6_add_dev(dev);
 			if (IS_ERR(idev))
@@ -6450,6 +6454,11 @@ static int __addrconf_sysctl_register(struct net *net, char *dev_name,
 	int i, ifindex;
 	struct ctl_table *table;
 	char path[sizeof("net/ipv6/conf/") + IFNAMSIZ];
+
+	if (idev && idev->dev && !netif_has_sysctl(idev->dev)) {
+		p->sysctl_header = NULL;
+		return 0;
+	}
 
 	table = kmemdup(addrconf_sysctl, sizeof(addrconf_sysctl), GFP_KERNEL);
 	if (!table)

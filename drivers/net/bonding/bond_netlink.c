@@ -446,6 +446,12 @@ static int bond_newlink(struct net *src_net, struct net_device *bond_dev,
 {
 	int err;
 
+	if (netif_is_lwt(bond_dev)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Lightweight netdev option not supported");
+		return -EINVAL;
+	}
+
 	err = bond_changelink(bond_dev, tb, data, extack);
 	if (err < 0)
 		return err;

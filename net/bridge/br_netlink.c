@@ -1262,6 +1262,12 @@ static int br_dev_newlink(struct net *src_net, struct net_device *dev,
 	struct net_bridge *br = netdev_priv(dev);
 	int err;
 
+	if (netif_is_lwt(dev)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Lightweight netdev option not supported");
+		return -EINVAL;
+	}
+
 	err = register_netdevice(dev);
 	if (err)
 		return err;

@@ -2765,6 +2765,7 @@ struct net_device *rtnl_create_link(struct net *net,
 	struct net_device *dev;
 	unsigned int num_tx_queues = 1;
 	unsigned int num_rx_queues = 1;
+	unsigned int flags = 0;
 
 	if (tb[IFLA_NUM_TX_QUEUES])
 		num_tx_queues = nla_get_u32(tb[IFLA_NUM_TX_QUEUES]);
@@ -2776,8 +2777,16 @@ struct net_device *rtnl_create_link(struct net *net,
 	else if (ops->get_num_rx_queues)
 		num_rx_queues = ops->get_num_rx_queues();
 
-	dev = alloc_netdev_mqs(ops->priv_size, ifname, name_assign_type,
-			       ops->setup, num_tx_queues, num_rx_queues);
+	if (tb[IFLA_LWT_NETDEV]) {
+		u8 lwt_dev = !!nla_get_u8(tb[IFLA_LWT_NETDEV]);
+
+		if (lwt_dev)
+			flags |= IFF_LWT_DEV;
+	}
+
+	dev = alloc_netdev_mqs_flags(ops->priv_size, ifname, name_assign_type,
+				     ops->setup, num_tx_queues, num_rx_queues,
+				     flags);
 	if (!dev)
 		return ERR_PTR(-ENOMEM);
 

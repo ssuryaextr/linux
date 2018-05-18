@@ -6296,6 +6296,9 @@ static int netdev_adjacent_sysfs_add(struct net_device *dev,
 {
 	char linkname[IFNAMSIZ+7];
 
+	if (netif_is_lwt(dev) || netif_is_lwt(adj_dev))
+		return 0;
+
 	sprintf(linkname, dev_list == &dev->adj_list.upper ?
 		"upper_%s" : "lower_%s", adj_dev->name);
 	return sysfs_create_link(&(dev->dev.kobj), &(adj_dev->dev.kobj),
@@ -6306,6 +6309,9 @@ static void netdev_adjacent_sysfs_del(struct net_device *dev,
 			       struct list_head *dev_list)
 {
 	char linkname[IFNAMSIZ+7];
+
+	if (netif_is_lwt(dev))
+		return;
 
 	sprintf(linkname, dev_list == &dev->adj_list.upper ?
 		"upper_%s" : "lower_%s", name);
@@ -6360,10 +6366,12 @@ static int __netdev_adjacent_dev_insert(struct net_device *dev,
 
 	/* Ensure that master link is always the first item in list. */
 	if (master) {
-		ret = sysfs_create_link(&(dev->dev.kobj),
-					&(adj_dev->dev.kobj), "master");
-		if (ret)
-			goto remove_symlinks;
+		if (!netif_is_lwt(dev)) {
+			ret = sysfs_create_link(&(dev->dev.kobj),
+						&(adj_dev->dev.kobj), "master");
+			if (ret)
+				goto remove_symlinks;
+		}
 
 		list_add_rcu(&adj->list, dev_list);
 	} else {
@@ -6409,7 +6417,7 @@ static void __netdev_adjacent_dev_remove(struct net_device *dev,
 		return;
 	}
 
-	if (adj->master)
+	if (adj->master && !netif_is_lwt(dev))
 		sysfs_remove_link(&(dev->dev.kobj), "master");
 
 	if (netdev_adjacent_is_neigh_list(dev, adj_dev, dev_list))
@@ -6512,19 +6520,25 @@ static int __netdev_upper_dev_link(struct net_device *dev,
 	ret = call_netdevice_notifiers_info(NETDEV_PRECHANGEUPPER,
 					    &changeupper_info.info);
 	ret = notifier_to_errno(ret);
-	if (ret)
+	if (ret) {
+		NL_SET_ERR_MSG(extack, "NETDEV_PRECHANGEUPPER failed");
 		return ret;
+	}
 
 	ret = __netdev_adjacent_dev_link_neighbour(dev, upper_dev, upper_priv,
 						   master);
-	if (ret)
+	if (ret) {
+		NL_SET_ERR_MSG(extack, "__netdev_adjacent_dev_link_neighbour failed");
 		return ret;
+	}
 
 	ret = call_netdevice_notifiers_info(NETDEV_CHANGEUPPER,
 					    &changeupper_info.info);
 	ret = notifier_to_errno(ret);
-	if (ret)
+	if (ret) {
+		NL_SET_ERR_MSG(extack, "NETDEV_CHANGEUPPER failed");
 		goto rollback;
+	}
 
 	return 0;
 
@@ -8281,7 +8295,7 @@ void netdev_run_todo(void)
 		wake_up(&netdev_unregistering_wq);
 
 		/* Free network device */
-		kobject_put(&dev->dev.kobj);
+		netdev_kobject_put(dev);
 	}
 }
 
@@ -8387,15 +8401,16 @@ void netdev_freemem(struct net_device *dev)
  * @setup: callback to initialize device
  * @txqs: the number of TX subqueues to allocate
  * @rxqs: the number of RX subqueues to allocate
+ * @flags: flags to 'or' with priv_flags
  *
  * Allocates a struct net_device with private data area for driver use
  * and performs basic initialization.  Also allocates subqueue structs
  * for each queue on the device.
  */
-struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
+static struct net_device *__alloc_netdev_mqs(int sizeof_priv, const char *name,
 		unsigned char name_assign_type,
 		void (*setup)(struct net_device *),
-		unsigned int txqs, unsigned int rxqs)
+		unsigned int txqs, unsigned int rxqs, unsigned int flags)
 {
 	struct net_device *dev;
 	unsigned int alloc_size;
@@ -8473,6 +8488,8 @@ struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 	if (netif_alloc_rx_queues(dev))
 		goto free_all;
 
+	dev->priv_flags |= flags;
+
 	strcpy(dev->name, name);
 	dev->name_assign_type = name_assign_type;
 	dev->group = INIT_NETDEV_GROUP;
@@ -8493,7 +8510,26 @@ free_dev:
 	netdev_freemem(dev);
 	return NULL;
 }
+
+struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
+		unsigned char name_assign_type,
+		void (*setup)(struct net_device *),
+		unsigned int txqs, unsigned int rxqs)
+{
+	return __alloc_netdev_mqs(sizeof_priv, name, name_assign_type, setup,
+				  txqs, rxqs, 0);
+}
 EXPORT_SYMBOL(alloc_netdev_mqs);
+
+struct net_device *alloc_netdev_mqs_flags(int sizeof_priv, const char *name,
+		unsigned char name_assign_type,
+		void (*setup)(struct net_device *),
+		unsigned int txqs, unsigned int rxqs, unsigned int flags)
+{
+	return __alloc_netdev_mqs(sizeof_priv, name, name_assign_type, setup,
+				  txqs, rxqs, flags);
+}
+EXPORT_SYMBOL(alloc_netdev_mqs_flags);
 
 /**
  * free_netdev - free network device
@@ -8533,7 +8569,8 @@ void free_netdev(struct net_device *dev)
 	dev->reg_state = NETREG_RELEASED;
 
 	/* will free via device release */
-	put_device(&dev->dev);
+	if (!netif_is_lwt(dev))
+		put_device(&dev->dev);
 }
 EXPORT_SYMBOL(free_netdev);
 

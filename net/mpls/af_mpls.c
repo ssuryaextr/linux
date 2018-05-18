@@ -1351,6 +1351,9 @@ static int mpls_dev_sysctl_register(struct net_device *dev,
 	struct ctl_table *table;
 	int i;
 
+	if (!netif_has_sysctl(dev))
+		return 0;
+
 	table = kmemdup(&mpls_dev_table, sizeof(mpls_dev_table), GFP_KERNEL);
 	if (!table)
 		goto out;
@@ -1384,6 +1387,9 @@ static void mpls_dev_sysctl_unregister(struct net_device *dev,
 {
 	struct net *net = dev_net(dev);
 	struct ctl_table *table;
+
+	if (!mdev->sysctl)
+		return;
 
 	table = mdev->sysctl->ctl_table_arg;
 	unregister_net_sysctl_table(mdev->sysctl);
