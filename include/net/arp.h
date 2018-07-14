@@ -10,6 +10,29 @@
 
 extern struct neigh_table arp_tbl;
 
+static inline struct neigh_table *ipv4_neigh_table(struct net *net)
+{
+	return neigh_find_table(net, AF_INET);
+}
+
+static inline struct neighbour *ipv4_neigh_create(struct net_device *dev,
+						  const void *pkey)
+{
+	return neigh_create(ipv4_neigh_table(dev_net(dev)), pkey, dev);
+}
+
+static inline struct neighbour *ipv4_neigh_create_noref(struct net_device *dev,
+							const void *pkey)
+{
+	return __neigh_create(ipv4_neigh_table(dev_net(dev)), pkey, dev, false);
+}
+
+static inline struct neighbour *ipv4_neigh_lookup(struct net_device *dev,
+						  void *key)
+{
+	return neigh_lookup(ipv4_neigh_table(dev_net(dev)), key, dev);
+}
+
 static inline u32 arp_hashfn(const void *pkey, const struct net_device *dev, u32 *hash_rnd)
 {
 	u32 key = *(const u32 *)pkey;
@@ -23,7 +46,8 @@ static inline struct neighbour *__ipv4_neigh_lookup_noref(struct net_device *dev
 	if (dev->flags & (IFF_LOOPBACK | IFF_POINTOPOINT))
 		key = INADDR_ANY;
 
-	return ___neigh_lookup_noref(&arp_tbl, neigh_key_eq32, arp_hashfn, &key, dev);
+	return ___neigh_lookup_noref(ipv4_neigh_table(dev_net(dev)),
+				     neigh_key_eq32, arp_hashfn, &key, dev);
 }
 
 static inline struct neighbour *__ipv4_neigh_lookup(struct net_device *dev, u32 key)
