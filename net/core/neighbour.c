@@ -505,7 +505,8 @@ struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
 	dev_hold(dev);
 
 	/* Protocol specific setup. */
-	if (tbl->constructor &&	(error = tbl->constructor(n)) < 0) {
+	if (tbl->constructor &&
+	    (error = tbl->constructor(n, tbl->key_len)) < 0) {
 		rc = ERR_PTR(error);
 		goto out_neigh_release;
 	}

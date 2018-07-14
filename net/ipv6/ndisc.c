@@ -77,7 +77,7 @@ static u32 ndisc_hash(const void *pkey,
 		      const struct net_device *dev,
 		      __u32 *hash_rnd);
 static bool ndisc_key_eq(const struct neighbour *neigh, const void *pkey);
-static int ndisc_constructor(struct neighbour *neigh);
+static int ndisc_constructor(struct neighbour *neigh, unsigned int key_len);
 static void ndisc_solicit(struct neighbour *neigh, struct sk_buff *skb);
 static void ndisc_error_report(struct neighbour *neigh, struct sk_buff *skb);
 static int pndisc_constructor(struct pneigh_entry *n);
@@ -319,7 +319,7 @@ static bool ndisc_key_eq(const struct neighbour *n, const void *pkey)
 	return neigh_key_eq128(n, pkey);
 }
 
-static int ndisc_constructor(struct neighbour *neigh)
+static int ndisc_constructor(struct neighbour *neigh, unsigned int key_len)
 {
 	struct in6_addr *addr = (struct in6_addr *)&neigh->primary_key;
 	struct net_device *dev = neigh->dev;

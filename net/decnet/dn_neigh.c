@@ -49,7 +49,7 @@
 #include <net/dn_neigh.h>
 #include <net/dn_route.h>
 
-static int dn_neigh_construct(struct neighbour *);
+static int dn_neigh_construct(struct neighbour *, unsigned int key_len);
 static void dn_neigh_error_report(struct neighbour *, struct sk_buff *);
 static int dn_neigh_output(struct neighbour *neigh, struct sk_buff *skb);
 
@@ -108,7 +108,7 @@ struct neigh_table dn_neigh_table = {
 	.gc_thresh3 =			1024,
 };
 
-static int dn_neigh_construct(struct neighbour *neigh)
+static int dn_neigh_construct(struct neighbour *neigh, unsigned int key_len)
 {
 	struct net_device *dev = neigh->dev;
 	struct dn_neigh *dn = container_of(neigh, struct dn_neigh, n);

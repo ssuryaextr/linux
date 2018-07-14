@@ -198,7 +198,8 @@ struct neigh_table {
 					const struct net_device *dev,
 					__u32 *hash_rnd);
 	bool			(*key_eq)(const struct neighbour *, const void *pkey);
-	int			(*constructor)(struct neighbour *);
+	int			(*constructor)(struct neighbour *,
+					       unsigned int key_len);
 	int			(*pconstructor)(struct pneigh_entry *);
 	void			(*pdestructor)(struct pneigh_entry *);
 	void			(*proxy_redo)(struct sk_buff *skb);

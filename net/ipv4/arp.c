@@ -125,7 +125,7 @@
  */
 static u32 arp_hash(const void *pkey, const struct net_device *dev, __u32 *hash_rnd);
 static bool arp_key_eq(const struct neighbour *n, const void *pkey);
-static int arp_constructor(struct neighbour *neigh);
+static int arp_constructor(struct neighbour *neigh, unsigned int key_len);
 static void arp_solicit(struct neighbour *neigh, struct sk_buff *skb);
 static void arp_error_report(struct neighbour *neigh, struct sk_buff *skb);
 static void parp_redo(struct sk_buff *skb);
@@ -221,7 +221,7 @@ static bool arp_key_eq(const struct neighbour *neigh, const void *pkey)
 	return neigh_key_eq32(neigh, pkey);
 }
 
-static int arp_constructor(struct neighbour *neigh)
+static int arp_constructor(struct neighbour *neigh, unsigned int key_len)
 {
 	__be32 addr;
 	struct net_device *dev = neigh->dev;
@@ -230,7 +230,7 @@ static int arp_constructor(struct neighbour *neigh)
 	u32 inaddr_any = INADDR_ANY;
 
 	if (dev->flags & (IFF_LOOPBACK | IFF_POINTOPOINT))
-		memcpy(neigh->primary_key, &inaddr_any, arp_tbl.key_len);
+		memcpy(neigh->primary_key, &inaddr_any, key_len);
 
 	addr = *(__be32 *)neigh->primary_key;
 	rcu_read_lock();
