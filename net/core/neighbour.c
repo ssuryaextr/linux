@@ -62,6 +62,19 @@ static int pneigh_ifdown_and_unlock(struct neigh_table *tbl,
 static const struct seq_operations neigh_stat_seq_ops;
 #endif
 
+/* used for table dumps to maintain the legacy order of
+ * ipv4, ipv6, decnet
+ */
+static int table_families[] = {
+	AF_INET,
+#if IS_ENABLED(CONFIG_IPV6)
+	AF_INET6,
+#endif
+#if IS_ENABLED(CONFIG_DECNET)
+	AF_DECnet,
+#endif
+};
+
 /*
    Neighbour hash table buckets are protected with rwlock tbl->lock.
 
@@ -2046,8 +2059,8 @@ static int neightbl_set(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	ndtmsg = nlmsg_data(nlh);
 
-	for (tidx = 0; tidx < NEIGH_NR_TABLES; tidx++) {
-		tbl = neigh_tables[tidx];
+	for (tidx = 0; tidx < ARRAY_SIZE(table_families); tidx++) {
+		tbl = neigh_find_table(net, table_families[tidx]);
 		if (!tbl)
 			continue;
 		if (ndtmsg->ndtm_family && tbl->family != ndtmsg->ndtm_family)
@@ -2195,10 +2208,10 @@ static int neightbl_dump_info(struct sk_buff *skb, struct netlink_callback *cb)
 
 	family = ((struct rtgenmsg *) nlmsg_data(cb->nlh))->rtgen_family;
 
-	for (tidx = 0; tidx < NEIGH_NR_TABLES; tidx++) {
+	for (tidx = 0; tidx < ARRAY_SIZE(table_families); tidx++) {
 		struct neigh_parms *p;
 
-		tbl = neigh_tables[tidx];
+		tbl = neigh_find_table(net, table_families[tidx]);
 		if (!tbl)
 			continue;
 
@@ -2453,6 +2466,7 @@ out:
 
 static int neigh_dump_info(struct sk_buff *skb, struct netlink_callback *cb)
 {
+	struct net *net = sock_net(skb->sk);
 	struct neigh_table *tbl;
 	int t, family, s_t;
 	int proxy = 0;
@@ -2469,9 +2483,8 @@ static int neigh_dump_info(struct sk_buff *skb, struct netlink_callback *cb)
 
 	s_t = cb->args[0];
 
-	for (t = 0; t < NEIGH_NR_TABLES; t++) {
-		tbl = neigh_tables[t];
-
+	for (t = 0; t < ARRAY_SIZE(table_families); t++) {
+		tbl = neigh_find_table(net, table_families[t]);
 		if (!tbl)
 			continue;
 		if (t < s_t || (family && tbl->family != family))
