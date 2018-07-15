@@ -207,10 +207,10 @@ struct neighbour *ip6_neigh_lookup(const struct in6_addr *gw,
 	struct neighbour *n;
 
 	daddr = choose_neigh_daddr(gw, skb, daddr);
-	n = __ipv6_neigh_lookup(dev, daddr);
+	n = __ipv6_neigh_lookup_noref(dev, daddr);
 	if (n)
 		return n;
-	return neigh_create(&nd_tbl, daddr, dev);
+	return ipv6_neigh_create(dev, daddr, true);
 }
 
 static struct neighbour *ip6_dst_neigh_lookup(const struct dst_entry *dst,
@@ -3392,7 +3392,7 @@ static void rt6_do_redirect(struct dst_entry *dst, struct sock *sk, struct sk_bu
 	 */
 	dst_confirm_neigh(&rt->dst, &ipv6_hdr(skb)->saddr);
 
-	neigh = __neigh_lookup(&nd_tbl, &msg->target, skb->dev, 1);
+	neigh = __ipv6_neigh_lookup(skb->dev, &msg->target, 1);
 	if (!neigh)
 		return;
 
@@ -4064,9 +4064,11 @@ void rt6_sync_down_dev(struct net_device *dev, unsigned long event)
 
 void rt6_disable_ip(struct net_device *dev, unsigned long event)
 {
+	struct net *net = dev_net(dev);
+
 	rt6_sync_down_dev(dev, event);
-	rt6_uncached_list_flush_dev(dev_net(dev), dev);
-	neigh_ifdown(&nd_tbl, dev);
+	rt6_uncached_list_flush_dev(net, dev);
+	neigh_ifdown(ipv6_neigh_table(net), dev);
 }
 
 struct rt6_mtu_change_arg {
