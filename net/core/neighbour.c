@@ -1625,7 +1625,7 @@ int neigh_table_clear(int index, struct neigh_table *tbl)
 }
 EXPORT_SYMBOL(neigh_table_clear);
 
-static struct neigh_table *neigh_find_table(int family)
+struct neigh_table *neigh_find_table(struct net *net, u8 family)
 {
 	struct neigh_table *tbl = NULL;
 
@@ -1643,6 +1643,7 @@ static struct neigh_table *neigh_find_table(int family)
 
 	return tbl;
 }
+EXPORT_SYMBOL(neigh_find_table);
 
 static int neigh_delete(struct sk_buff *skb, struct nlmsghdr *nlh,
 			struct netlink_ext_ack *extack)
@@ -1672,7 +1673,7 @@ static int neigh_delete(struct sk_buff *skb, struct nlmsghdr *nlh,
 		}
 	}
 
-	tbl = neigh_find_table(ndm->ndm_family);
+	tbl = neigh_find_table(net, ndm->ndm_family);
 	if (tbl == NULL)
 		return -EAFNOSUPPORT;
 
@@ -1740,7 +1741,7 @@ static int neigh_add(struct sk_buff *skb, struct nlmsghdr *nlh,
 			goto out;
 	}
 
-	tbl = neigh_find_table(ndm->ndm_family);
+	tbl = neigh_find_table(net, ndm->ndm_family);
 	if (tbl == NULL)
 		return -EAFNOSUPPORT;
 

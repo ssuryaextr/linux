@@ -229,6 +229,8 @@ enum {
 	NEIGH_LINK_TABLE = NEIGH_NR_TABLES /* Pseudo table for neigh_xmit */
 };
 
+struct neigh_table *neigh_find_table(struct net *net, u8 family);
+
 static inline int neigh_parms_family(struct neigh_parms *p)
 {
 	return p->tbl->family;
