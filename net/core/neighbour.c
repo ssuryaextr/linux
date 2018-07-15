@@ -1485,15 +1485,11 @@ EXPORT_SYMBOL(pneigh_enqueue);
 static inline struct neigh_parms *lookup_neigh_parms(struct neigh_table *tbl,
 						      struct net *net, int ifindex)
 {
-	struct net *def_net = &init_net;
 	struct neigh_parms *p;
-
-	if (tbl->family != AF_DECnet)
-		def_net = neigh_parms_net(p);
 
 	list_for_each_entry(p, &tbl->parms_list, list) {
 		if ((p->dev && p->dev->ifindex == ifindex && net_eq(neigh_parms_net(p), net)) ||
-		    (!p->dev && !ifindex && net_eq(net, def_net)))
+		    (!p->dev && !ifindex))
 			return p;
 	}
 
@@ -1622,9 +1618,11 @@ void neigh_table_init(struct net *net, struct neigh_table *tbl)
 		net->ipv6.nd_tbl = tbl;
 		break;
 #endif
+#if IS_ENABLED(CONFIG_DECNET)
 	case AF_DECnet:
-		neigh_tables[NEIGH_DN_TABLE] = tbl;
+		net->dn_tbl = tbl;
 		break;
+#endif
 	}
 }
 EXPORT_SYMBOL(neigh_table_init);
@@ -1642,9 +1640,11 @@ int neigh_table_clear(struct net *net, struct neigh_table *tbl)
 		net->ipv6.nd_tbl = NULL;
 		break;
 #endif
+#if IS_ENABLED(CONFIG_DECNET)
 	case AF_DECnet:
-		neigh_tables[NEIGH_DN_TABLE] = NULL;
+		net->dn_tbl = NULL;
 		break;
+#endif
 	}
 
 	/* It is not clean... Fix it to unload IPv6 module safely */
@@ -1684,9 +1684,11 @@ struct neigh_table *neigh_find_table(struct net *net, u8 family)
 		tbl = net->ipv6.nd_tbl;
 		break;
 #endif
+#if IS_ENABLED(CONFIG_DECNET)
 	case AF_DECnet:
-		tbl = neigh_tables[NEIGH_DN_TABLE];
+		tbl = net->dn_tbl;
 		break;
+#endif
 	}
 
 	return tbl;
@@ -2180,14 +2182,6 @@ static int neightbl_set(struct sk_buff *skb, struct nlmsghdr *nlh,
 				break;
 			}
 		}
-	}
-
-	err = -ENOENT;
-	if (tbl->family == AF_DECnet) {
-		if ((tb[NDTA_THRESH1] || tb[NDTA_THRESH2] ||
-		     tb[NDTA_THRESH3] || tb[NDTA_GC_INTERVAL]) &&
-		    !net_eq(net, &init_net))
-			goto errout_tbl_lock;
 	}
 
 	if (tb[NDTA_THRESH1])
