@@ -34,7 +34,7 @@
  */
 #define MAX_MP_SELECT_LABELS 4
 
-#define MPLS_NEIGH_TABLE_UNSPEC (NEIGH_LINK_TABLE + 1)
+#define MPLS_NEIGH_TABLE_UNSPEC AF_UNSPEC
 
 static int zero = 0;
 static int one = 1;
@@ -453,7 +453,7 @@ static int mpls_forward(struct sk_buff *skb, struct net_device *dev,
 
 	/* If via wasn't specified then send out using device address */
 	if (nh->nh_via_table == MPLS_NEIGH_TABLE_UNSPEC)
-		err = neigh_xmit(NEIGH_LINK_TABLE, out_dev,
+		err = neigh_xmit(AF_UNSPEC, out_dev,
 				 out_dev->dev_addr, skb);
 	else
 		err = neigh_xmit(nh->nh_via_table, out_dev,
@@ -651,13 +651,11 @@ static struct net_device *find_outdev(struct net *net,
 
 	if (!oif) {
 		switch (nh->nh_via_table) {
-		case NEIGH_ARP_TABLE:
+		case AF_INET:
 			dev = inet_fib_lookup_dev(net, mpls_nh_via(rt, nh));
 			break;
-		case NEIGH_ND_TABLE:
+		case AF_INET6:
 			dev = inet6_fib_lookup_dev(net, mpls_nh_via(rt, nh));
-			break;
-		case NEIGH_LINK_TABLE:
 			break;
 		}
 	} else {
@@ -694,7 +692,7 @@ static int mpls_nh_assign_dev(struct net *net, struct mpls_route *rt,
 	if (!mpls_dev_get(dev))
 		goto errout;
 
-	if ((nh->nh_via_table == NEIGH_LINK_TABLE) &&
+	if ((nh->nh_via_table == MPLS_NEIGH_TABLE_UNSPEC) &&
 	    (dev->addr_len != nh->nh_via_alen))
 		goto errout;
 
@@ -739,15 +737,15 @@ static int nla_get_via(const struct nlattr *nla, u8 *via_alen, u8 *via_table,
 	/* Validate the address family */
 	switch (via->rtvia_family) {
 	case AF_PACKET:
-		*via_table = NEIGH_LINK_TABLE;
+		*via_table = MPLS_NEIGH_TABLE_UNSPEC;
 		break;
 	case AF_INET:
-		*via_table = NEIGH_ARP_TABLE;
+		*via_table = AF_INET;
 		if (alen != 4)
 			goto errout;
 		break;
 	case AF_INET6:
-		*via_table = NEIGH_ND_TABLE;
+		*via_table = AF_INET6;
 		if (alen != 16)
 			goto errout;
 		break;
@@ -1596,22 +1594,15 @@ static struct notifier_block mpls_dev_notifier = {
 	.notifier_call = mpls_dev_notify,
 };
 
-static int nla_put_via(struct sk_buff *skb,
-		       u8 table, const void *addr, int alen)
+static int nla_put_via(struct sk_buff *skb, u8 family,
+		       const void *addr, int alen)
 {
-	static const int table_to_family[NEIGH_NR_TABLES + 1] = {
-		AF_INET, AF_INET6, AF_DECnet, AF_PACKET,
-	};
 	struct nlattr *nla;
 	struct rtvia *via;
-	int family = AF_UNSPEC;
 
 	nla = nla_reserve(skb, RTA_VIA, alen + 2);
 	if (!nla)
 		return -EMSGSIZE;
-
-	if (table <= NEIGH_NR_TABLES)
-		family = table_to_family[table];
 
 	via = nla_data(nla);
 	via->rtvia_family = family;
@@ -2295,7 +2286,7 @@ static int resize_platform_label_table(struct net *net, size_t limit)
 		rt0->rt_protocol = RTPROT_KERNEL;
 		rt0->rt_payload_type = MPT_IPV4;
 		rt0->rt_ttl_propagate = MPLS_TTL_PROP_DEFAULT;
-		rt0->rt_nh->nh_via_table = NEIGH_LINK_TABLE;
+		rt0->rt_nh->nh_via_table = MPLS_NEIGH_TABLE_UNSPEC;
 		rt0->rt_nh->nh_via_alen = lo->addr_len;
 		memcpy(__mpls_nh_via(rt0, rt0->rt_nh), lo->dev_addr,
 		       lo->addr_len);
@@ -2309,7 +2300,7 @@ static int resize_platform_label_table(struct net *net, size_t limit)
 		rt2->rt_protocol = RTPROT_KERNEL;
 		rt2->rt_payload_type = MPT_IPV6;
 		rt2->rt_ttl_propagate = MPLS_TTL_PROP_DEFAULT;
-		rt2->rt_nh->nh_via_table = NEIGH_LINK_TABLE;
+		rt2->rt_nh->nh_via_table = MPLS_NEIGH_TABLE_UNSPEC;
 		rt2->rt_nh->nh_via_alen = lo->addr_len;
 		memcpy(__mpls_nh_via(rt2, rt2->rt_nh), lo->dev_addr,
 		       lo->addr_len);

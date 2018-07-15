@@ -84,7 +84,7 @@ static void nft_fwd_neigh_eval(const struct nft_expr *expr,
 	unsigned int verdict = NF_STOLEN;
 	struct sk_buff *skb = pkt->skb;
 	struct net_device *dev;
-	int neigh_table;
+	u8 neigh_table;
 
 	switch (priv->nfproto) {
 	case NFPROTO_IPV4: {
@@ -100,7 +100,7 @@ static void nft_fwd_neigh_eval(const struct nft_expr *expr,
 		}
 		iph = ip_hdr(skb);
 		ip_decrease_ttl(iph);
-		neigh_table = NEIGH_ARP_TABLE;
+		neigh_table = AF_INET;
 		break;
 		}
 	case NFPROTO_IPV6: {
@@ -116,7 +116,7 @@ static void nft_fwd_neigh_eval(const struct nft_expr *expr,
 		}
 		ip6h = ipv6_hdr(skb);
 		ip6h->hop_limit--;
-		neigh_table = NEIGH_ND_TABLE;
+		neigh_table = AF_INET6;
 		break;
 		}
 	default:

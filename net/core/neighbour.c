@@ -2548,15 +2548,16 @@ void __neigh_for_each_release(struct neigh_table *tbl,
 }
 EXPORT_SYMBOL(__neigh_for_each_release);
 
-int neigh_xmit(int index, struct net_device *dev,
+int neigh_xmit(u8 family, struct net_device *dev,
 	       const void *addr, struct sk_buff *skb)
 {
 	int err = -EAFNOSUPPORT;
-	if (likely(index < NEIGH_NR_TABLES)) {
+
+	if (likely(family != AF_UNSPEC)) {
 		struct neigh_table *tbl;
 		struct neighbour *neigh;
 
-		tbl = neigh_tables[index];
+		tbl = neigh_find_table(dev_net(dev), family);
 		if (!tbl)
 			goto out;
 		rcu_read_lock_bh();
@@ -2570,8 +2571,7 @@ int neigh_xmit(int index, struct net_device *dev,
 		}
 		err = neigh->output(neigh, skb);
 		rcu_read_unlock_bh();
-	}
-	else if (index == NEIGH_LINK_TABLE) {
+	} else {
 		err = dev_hard_header(skb, dev, ntohs(skb->protocol),
 				      addr, NULL, skb->len);
 		if (err < 0)

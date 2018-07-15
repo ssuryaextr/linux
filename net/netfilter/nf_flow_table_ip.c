@@ -265,7 +265,7 @@ nf_flow_offload_ip_hook(void *priv, struct sk_buff *skb,
 	skb->dev = outdev;
 	nexthop = rt_nexthop(rt, flow->tuplehash[!dir].tuple.src_v4.s_addr);
 	skb_dst_set_noref(skb, &rt->dst);
-	neigh_xmit(NEIGH_ARP_TABLE, outdev, &nexthop, skb);
+	neigh_xmit(AF_INET, outdev, &nexthop, skb);
 
 	return NF_STOLEN;
 }
@@ -482,7 +482,7 @@ nf_flow_offload_ipv6_hook(void *priv, struct sk_buff *skb,
 	skb->dev = outdev;
 	nexthop = rt6_nexthop(rt, &flow->tuplehash[!dir].tuple.src_v6);
 	skb_dst_set_noref(skb, &rt->dst);
-	neigh_xmit(NEIGH_ND_TABLE, outdev, nexthop, skb);
+	neigh_xmit(AF_INET6, outdev, nexthop, skb);
 
 	return NF_STOLEN;
 }
