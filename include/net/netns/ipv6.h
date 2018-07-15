@@ -66,6 +66,7 @@ struct netns_ipv6 {
 	struct rt6_statistics   *rt6_stats;
 	struct timer_list       ip6_fib_timer;
 	struct hlist_head       *fib_table_hash;
+	struct neigh_table	*nd_tbl;
 	struct fib6_table       *fib6_main_tbl;
 	struct list_head	fib6_walkers;
 	struct dst_ops		ip6_dst_ops;

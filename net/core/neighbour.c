@@ -1488,7 +1488,7 @@ static inline struct neigh_parms *lookup_neigh_parms(struct neigh_table *tbl,
 	struct net *def_net = &init_net;
 	struct neigh_parms *p;
 
-	if (tbl->family == AF_INET)
+	if (tbl->family != AF_DECnet)
 		def_net = neigh_parms_net(p);
 
 	list_for_each_entry(p, &tbl->parms_list, list) {
@@ -1617,9 +1617,11 @@ void neigh_table_init(struct net *net, struct neigh_table *tbl)
 	case AF_INET:
 		net->ipv4.arp_tbl = tbl;
 		break;
+#if IS_ENABLED(CONFIG_IPV6)
 	case AF_INET6:
-		neigh_tables[NEIGH_ND_TABLE] = tbl;
+		net->ipv6.nd_tbl = tbl;
 		break;
+#endif
 	case AF_DECnet:
 		neigh_tables[NEIGH_DN_TABLE] = tbl;
 		break;
@@ -1635,9 +1637,11 @@ int neigh_table_clear(struct net *net, struct neigh_table *tbl)
 	case AF_INET:
 		net->ipv4.arp_tbl = NULL;
 		break;
+#if IS_ENABLED(CONFIG_IPV6)
 	case AF_INET6:
-		neigh_tables[NEIGH_ND_TABLE] = NULL;
+		net->ipv6.nd_tbl = NULL;
 		break;
+#endif
 	case AF_DECnet:
 		neigh_tables[NEIGH_DN_TABLE] = NULL;
 		break;
@@ -1675,9 +1679,11 @@ struct neigh_table *neigh_find_table(struct net *net, u8 family)
 	case AF_INET:
 		tbl = net->ipv4.arp_tbl;
 		break;
+#if IS_ENABLED(CONFIG_IPV6)
 	case AF_INET6:
-		tbl = neigh_tables[NEIGH_ND_TABLE];
+		tbl = net->ipv6.nd_tbl;
 		break;
+#endif
 	case AF_DECnet:
 		tbl = neigh_tables[NEIGH_DN_TABLE];
 		break;
@@ -2177,7 +2183,7 @@ static int neightbl_set(struct sk_buff *skb, struct nlmsghdr *nlh,
 	}
 
 	err = -ENOENT;
-	if (tbl->family != AF_INET) {
+	if (tbl->family == AF_DECnet) {
 		if ((tb[NDTA_THRESH1] || tb[NDTA_THRESH2] ||
 		     tb[NDTA_THRESH3] || tb[NDTA_GC_INTERVAL]) &&
 		    !net_eq(net, &init_net))

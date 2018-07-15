@@ -107,39 +107,18 @@ static const struct neigh_ops ndisc_direct_ops = {
 	.connected_output =	neigh_direct_output,
 };
 
-struct neigh_table nd_tbl = {
-	.family =	AF_INET6,
-	.key_len =	sizeof(struct in6_addr),
-	.protocol =	cpu_to_be16(ETH_P_IPV6),
-	.hash =		ndisc_hash,
-	.key_eq =	ndisc_key_eq,
-	.constructor =	ndisc_constructor,
-	.pconstructor =	pndisc_constructor,
-	.pdestructor =	pndisc_destructor,
-	.proxy_redo =	pndisc_redo,
-	.id =		"ndisc_cache",
-	.parms = {
-		.tbl			= &nd_tbl,
-		.reachable_time		= ND_REACHABLE_TIME,
-		.data = {
-			[NEIGH_VAR_MCAST_PROBES] = 3,
-			[NEIGH_VAR_UCAST_PROBES] = 3,
-			[NEIGH_VAR_RETRANS_TIME] = ND_RETRANS_TIMER,
-			[NEIGH_VAR_BASE_REACHABLE_TIME] = ND_REACHABLE_TIME,
-			[NEIGH_VAR_DELAY_PROBE_TIME] = 5 * HZ,
-			[NEIGH_VAR_GC_STALETIME] = 60 * HZ,
-			[NEIGH_VAR_QUEUE_LEN_BYTES] = SK_WMEM_MAX,
-			[NEIGH_VAR_PROXY_QLEN] = 64,
-			[NEIGH_VAR_ANYCAST_DELAY] = 1 * HZ,
-			[NEIGH_VAR_PROXY_DELAY] = (8 * HZ) / 10,
-		},
-	},
-	.gc_interval =	  30 * HZ,
-	.gc_thresh1 =	 128,
-	.gc_thresh2 =	 512,
-	.gc_thresh3 =	1024,
+static int parms_data[NEIGH_VAR_DATA_MAX] = {
+	[NEIGH_VAR_MCAST_PROBES] = 3,
+	[NEIGH_VAR_UCAST_PROBES] = 3,
+	[NEIGH_VAR_RETRANS_TIME] = ND_RETRANS_TIMER,
+	[NEIGH_VAR_BASE_REACHABLE_TIME] = ND_REACHABLE_TIME,
+	[NEIGH_VAR_DELAY_PROBE_TIME] = 5 * HZ,
+	[NEIGH_VAR_GC_STALETIME] = 60 * HZ,
+	[NEIGH_VAR_QUEUE_LEN_BYTES] = SK_WMEM_MAX,
+	[NEIGH_VAR_PROXY_QLEN] = 64,
+	[NEIGH_VAR_ANYCAST_DELAY] = 1 * HZ,
+	[NEIGH_VAR_PROXY_DELAY] = (8 * HZ) / 10,
 };
-EXPORT_SYMBOL_GPL(nd_tbl);
 
 void __ndisc_fill_addr_option(struct sk_buff *skb, int type, void *data,
 			      int data_len, int pad)
@@ -1865,9 +1844,14 @@ int ndisc_ifinfo_sysctl_change(struct ctl_table *ctl, int write, void __user *bu
 
 static int __net_init ndisc_net_init(struct net *net)
 {
+	struct neigh_table *nd_tbl;
 	struct ipv6_pinfo *np;
 	struct sock *sk;
 	int err;
+
+	nd_tbl = kzalloc(sizeof(*nd_tbl), GFP_KERNEL);
+	if (!nd_tbl)
+		return -ENOMEM;
 
 	err = inet_ctl_sock_create(&sk, PF_INET6,
 				   SOCK_RAW, IPPROTO_ICMPV6, net);
@@ -1875,6 +1859,7 @@ static int __net_init ndisc_net_init(struct net *net)
 		ND_PRINTK(0, err,
 			  "NDISC: Failed to initialize the control socket (err %d)\n",
 			  err);
+		kfree(nd_tbl);
 		return err;
 	}
 
@@ -1885,12 +1870,52 @@ static int __net_init ndisc_net_init(struct net *net)
 	/* Do not loopback ndisc messages */
 	np->mc_loop = 0;
 
-	return 0;
+	rwlock_init(&nd_tbl->lock);
+	nd_tbl->family		= AF_INET6;
+	nd_tbl->key_len		= sizeof(struct in6_addr);
+	nd_tbl->protocol	= cpu_to_be16(ETH_P_IPV6);
+	nd_tbl->hash		= ndisc_hash;
+	nd_tbl->key_eq		= ndisc_key_eq;
+	nd_tbl->constructor	= ndisc_constructor;
+	nd_tbl->pconstructor	= pndisc_constructor;
+	nd_tbl->pdestructor	= pndisc_destructor;
+	nd_tbl->proxy_redo	= pndisc_redo;
+	nd_tbl->id		= "ndisc_cache";
+	nd_tbl->gc_interval	= 30 * HZ;
+	nd_tbl->gc_thresh1	= 128;
+	nd_tbl->gc_thresh2	= 512;
+	nd_tbl->gc_thresh3	= 1024;
+
+	nd_tbl->parms.tbl	= nd_tbl;
+	nd_tbl->parms.reachable_time = ND_REACHABLE_TIME;
+	memcpy(nd_tbl->parms.data, parms_data, sizeof(parms_data));
+
+	neigh_table_init(net, nd_tbl);
+
+	err = 0;
+#ifdef CONFIG_SYSCTL
+	err = neigh_sysctl_register(NULL, &nd_tbl->parms,
+				    ndisc_ifinfo_sysctl_change);
+	if (err) {
+		inet_ctl_sock_destroy(net->ipv6.ndisc_sk);
+		kfree(nd_tbl);
+	}
+#endif
+	return err;
 }
 
 static void __net_exit ndisc_net_exit(struct net *net)
 {
+	struct neigh_table *nd_tbl = net->ipv6.nd_tbl;
+
 	inet_ctl_sock_destroy(net->ipv6.ndisc_sk);
+
+#ifdef CONFIG_SYSCTL
+	neigh_sysctl_unregister(&nd_tbl->parms);
+#endif
+	net->ipv6.nd_tbl = NULL;
+	neigh_table_clear(net, nd_tbl);
+	kfree(nd_tbl);
 }
 
 static struct pernet_operations ndisc_net_ops = {
@@ -1900,30 +1925,7 @@ static struct pernet_operations ndisc_net_ops = {
 
 int __init ndisc_init(void)
 {
-	int err;
-
-	err = register_pernet_subsys(&ndisc_net_ops);
-	if (err)
-		return err;
-	/*
-	 * Initialize the neighbour table
-	 */
-	neigh_table_init(&init_net, &nd_tbl);
-
-#ifdef CONFIG_SYSCTL
-	err = neigh_sysctl_register(NULL, &nd_tbl.parms,
-				    ndisc_ifinfo_sysctl_change);
-	if (err)
-		goto out_unregister_pernet;
-out:
-#endif
-	return err;
-
-#ifdef CONFIG_SYSCTL
-out_unregister_pernet:
-	unregister_pernet_subsys(&ndisc_net_ops);
-	goto out;
-#endif
+	return register_pernet_subsys(&ndisc_net_ops);
 }
 
 int __init ndisc_late_init(void)
@@ -1938,9 +1940,5 @@ void ndisc_late_cleanup(void)
 
 void ndisc_cleanup(void)
 {
-#ifdef CONFIG_SYSCTL
-	neigh_sysctl_unregister(&nd_tbl.parms);
-#endif
-	neigh_table_clear(&init_net, &nd_tbl);
 	unregister_pernet_subsys(&ndisc_net_ops);
 }

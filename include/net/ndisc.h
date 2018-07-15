@@ -374,7 +374,11 @@ static inline u32 ndisc_hashfn(const void *pkey, const struct net_device *dev, _
 
 static inline struct neigh_table *ipv6_neigh_table(struct net *net)
 {
-	return neigh_find_table(net, AF_INET6);
+#if IS_ENABLED(CONFIG_IPV6)
+	return net->ipv6.nd_tbl;
+#else
+	return NULL;
+#endif
 }
 
 static inline struct neighbour *ipv6_neigh_create(struct net_device *dev,
