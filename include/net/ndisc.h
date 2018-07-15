@@ -72,8 +72,6 @@ struct net_proto_family;
 struct sk_buff;
 struct prefix_info;
 
-extern struct neigh_table nd_tbl;
-
 struct nd_msg {
         struct icmp6hdr	icmph;
         struct in6_addr	target;

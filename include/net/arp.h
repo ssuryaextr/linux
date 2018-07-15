@@ -7,9 +7,6 @@
 #include <linux/hash.h>
 #include <net/neighbour.h>
 
-
-extern struct neigh_table arp_tbl;
-
 static inline struct neigh_table *ipv4_neigh_table(struct net *net)
 {
 	return neigh_find_table(net, AF_INET);
