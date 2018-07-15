@@ -678,6 +678,7 @@ static bool arp_is_garp(struct net *net, struct net_device *dev,
 
 static int arp_process(struct net *net, struct sock *sk, struct sk_buff *skb)
 {
+	struct neigh_table *tbl = ipv4_neigh_table(net);
 	struct net_device *dev = skb->dev;
 	struct in_device *in_dev = __in_dev_get_rcu(dev);
 	struct arphdr *arp;
@@ -827,7 +828,7 @@ static int arp_process(struct net *net, struct sock *sk, struct sk_buff *skb)
 			if (!dont_send && IN_DEV_ARPFILTER(in_dev))
 				dont_send = arp_filter(sip, tip, dev);
 			if (!dont_send) {
-				n = neigh_event_ns(&arp_tbl, sha, &sip, dev);
+				n = neigh_event_ns(tbl, sha, &sip, dev);
 				if (n) {
 					arp_send_dst(ARPOP_REPLY, ETH_P_ARP,
 						     sip, dev, tip, sha,
@@ -842,8 +843,8 @@ static int arp_process(struct net *net, struct sock *sk, struct sk_buff *skb)
 			    (arp_fwd_proxy(in_dev, dev, rt) ||
 			     arp_fwd_pvlan(in_dev, dev, rt, sip, tip) ||
 			     (rt->dst.dev != dev &&
-			      pneigh_lookup(&arp_tbl, net, &tip, dev, 0)))) {
-				n = neigh_event_ns(&arp_tbl, sha, &sip, dev);
+			      pneigh_lookup(tbl, net, &tip, dev, 0)))) {
+				n = neigh_event_ns(tbl, sha, &sip, dev);
 				if (n)
 					neigh_release(n);
 
@@ -855,7 +856,7 @@ static int arp_process(struct net *net, struct sock *sk, struct sk_buff *skb)
 						     dev->dev_addr, sha,
 						     reply_dst);
 				} else {
-					pneigh_enqueue(&arp_tbl,
+					pneigh_enqueue(tbl,
 						       in_dev->arp_parms, skb);
 					goto out_free_dst;
 				}
@@ -866,7 +867,7 @@ static int arp_process(struct net *net, struct sock *sk, struct sk_buff *skb)
 
 	/* Update our ARP tables */
 
-	n = __neigh_lookup(&arp_tbl, &sip, dev, 0);
+	n = __neigh_lookup(tbl, &sip, dev, 0);
 
 	addr_type = -1;
 	if (n || IN_DEV_ARP_ACCEPT(in_dev)) {
@@ -887,7 +888,7 @@ static int arp_process(struct net *net, struct sock *sk, struct sk_buff *skb)
 			/* postpone calculation to as late as possible */
 			inet_addr_type_dev_table(net, dev, sip) ==
 				RTN_UNICAST)))))
-			n = __neigh_lookup(&arp_tbl, &sip, dev, 1);
+			n = __neigh_lookup(tbl, &sip, dev, 1);
 	}
 
 	if (n) {
@@ -1011,7 +1012,7 @@ static int arp_req_set_public(struct net *net, struct arpreq *r,
 			return -ENODEV;
 	}
 	if (mask) {
-		if (!pneigh_lookup(&arp_tbl, net, &ip, dev, 1))
+		if (!pneigh_lookup(ipv4_neigh_table(net), net, &ip, dev, 1))
 			return -ENOBUFS;
 		return 0;
 	}
@@ -1063,7 +1064,7 @@ static int arp_req_set(struct net *net, struct arpreq *r,
 		break;
 	}
 
-	neigh = __neigh_lookup_errno(&arp_tbl, &ip, dev);
+	neigh = __neigh_lookup_errno(ipv4_neigh_table(net), &ip, dev);
 	err = PTR_ERR(neigh);
 	if (!IS_ERR(neigh)) {
 		unsigned int state = NUD_STALE;
@@ -1098,7 +1099,7 @@ static int arp_req_get(struct arpreq *r, struct net_device *dev)
 	struct neighbour *neigh;
 	int err = -ENXIO;
 
-	neigh = neigh_lookup(&arp_tbl, &ip, dev);
+	neigh = ipv4_neigh_lookup(dev, &ip);
 	if (neigh) {
 		if (!(neigh->nud_state & NUD_NOARP)) {
 			read_lock_bh(&neigh->lock);
@@ -1116,9 +1117,9 @@ static int arp_req_get(struct arpreq *r, struct net_device *dev)
 
 static int arp_invalidate(struct net_device *dev, __be32 ip)
 {
-	struct neighbour *neigh = neigh_lookup(&arp_tbl, &ip, dev);
+	struct neigh_table *tbl = ipv4_neigh_table(dev_net(dev));
+	struct neighbour *neigh = neigh_lookup(tbl, &ip, dev);
 	int err = -ENXIO;
-	struct neigh_table *tbl = &arp_tbl;
 
 	if (neigh) {
 		if (neigh->nud_state & ~NUD_NOARP)
@@ -1141,7 +1142,7 @@ static int arp_req_delete_public(struct net *net, struct arpreq *r,
 	__be32 mask = ((struct sockaddr_in *)&r->arp_netmask)->sin_addr.s_addr;
 
 	if (mask == htonl(0xFFFFFFFF))
-		return pneigh_delete(&arp_tbl, net, &ip, dev);
+		return pneigh_delete(ipv4_neigh_table(net), net, &ip, dev);
 
 	if (mask)
 		return -EINVAL;
@@ -1248,13 +1249,13 @@ static int arp_netdev_event(struct notifier_block *this, unsigned long event,
 
 	switch (event) {
 	case NETDEV_CHANGEADDR:
-		neigh_changeaddr(&arp_tbl, dev);
+		neigh_changeaddr(ipv4_neigh_table(dev_net(dev)), dev);
 		rt_cache_flush(dev_net(dev));
 		break;
 	case NETDEV_CHANGE:
 		change_info = ptr;
 		if (change_info->flags_changed & IFF_NOARP)
-			neigh_changeaddr(&arp_tbl, dev);
+			neigh_changeaddr(ipv4_neigh_table(dev_net(dev)), dev);
 		break;
 	default:
 		break;
@@ -1273,7 +1274,7 @@ static struct notifier_block arp_netdev_notifier = {
  */
 void arp_ifdown(struct net_device *dev)
 {
-	neigh_ifdown(&arp_tbl, dev);
+	neigh_ifdown(ipv4_neigh_table(dev_net(dev)), dev);
 }
 
 
@@ -1403,10 +1404,13 @@ static int arp_seq_show(struct seq_file *seq, void *v)
 
 static void *arp_seq_start(struct seq_file *seq, loff_t *pos)
 {
+	struct net *net = seq_file_net(seq);
+
 	/* Don't want to confuse "arp -a" w/ magic entries,
 	 * so we tell the generic iterator to skip NUD_NOARP.
 	 */
-	return neigh_seq_start(seq, pos, &arp_tbl, NEIGH_SEQ_SKIP_NOARP);
+	return neigh_seq_start(seq, pos, ipv4_neigh_table(net),
+			       NEIGH_SEQ_SKIP_NOARP);
 }
 
 /* ------------------------------------------------------------------------ */

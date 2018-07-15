@@ -440,7 +440,7 @@ static int fib_detect_death(struct fib_info *fi, int order,
 	struct neighbour *n;
 	int state = NUD_NONE;
 
-	n = neigh_lookup(&arp_tbl, &fi->fib_nh[0].nh_gw, fi->fib_dev);
+	n = ipv4_neigh_lookup(fi->fib_dev, &fi->fib_nh[0].nh_gw);
 	if (n) {
 		state = n->nud_state;
 		neigh_release(n);

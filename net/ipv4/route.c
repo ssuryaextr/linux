@@ -448,7 +448,7 @@ static struct neighbour *ipv4_dst_neigh_lookup(const struct dst_entry *dst,
 	n = __ipv4_neigh_lookup(dev, *(__force u32 *)pkey);
 	if (n)
 		return n;
-	return neigh_create(&arp_tbl, pkey, dev);
+	return ipv4_neigh_create(dev, pkey);
 }
 
 static void ipv4_confirm_neigh(const struct dst_entry *dst, const void *daddr)
@@ -770,7 +770,7 @@ static void __ip_do_redirect(struct rtable *rt, struct sk_buff *skb, struct flow
 
 	n = __ipv4_neigh_lookup(rt->dst.dev, new_gw);
 	if (!n)
-		n = neigh_create(&arp_tbl, &new_gw, rt->dst.dev);
+		n = ipv4_neigh_create(rt->dst.dev, &new_gw);
 	if (!IS_ERR(n)) {
 		if (!(n->nud_state & NUD_VALID)) {
 			neigh_event_send(n, NULL);
