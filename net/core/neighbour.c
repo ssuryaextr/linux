@@ -1548,14 +1548,15 @@ static struct lock_class_key neigh_table_proxy_queue_class;
 
 static struct neigh_table *neigh_tables[NEIGH_NR_TABLES] __read_mostly;
 
-void neigh_table_init(int index, struct neigh_table *tbl)
+void neigh_table_init(struct net *net, struct neigh_table *tbl)
 {
 	unsigned long now = jiffies;
+	u8 family = tbl->family;
 	unsigned long phsize;
 
 	INIT_LIST_HEAD(&tbl->parms_list);
 	list_add(&tbl->parms.list, &tbl->parms_list);
-	write_pnet(&tbl->parms.net, &init_net);
+	write_pnet(&tbl->parms.net, net);
 	refcount_set(&tbl->parms.refcnt, 1);
 	tbl->parms.reachable_time =
 			  neigh_rand_reach_time(NEIGH_VAR(&tbl->parms, BASE_REACHABLE_TIME));
@@ -1565,8 +1566,8 @@ void neigh_table_init(int index, struct neigh_table *tbl)
 		panic("cannot create neighbour cache statistics");
 
 #ifdef CONFIG_PROC_FS
-	if (!proc_create_seq_data(tbl->id, 0, init_net.proc_net_stat,
-			      &neigh_stat_seq_ops, tbl))
+	if (!proc_create_seq_data(tbl->id, 0, net->proc_net_stat,
+				  &neigh_stat_seq_ops, tbl))
 		panic("cannot create neighbour proc dir entry");
 #endif
 
@@ -1595,13 +1596,36 @@ void neigh_table_init(int index, struct neigh_table *tbl)
 	tbl->last_flush = now;
 	tbl->last_rand	= now + tbl->parms.reachable_time * 20;
 
-	neigh_tables[index] = tbl;
+	switch (family) {
+	case AF_INET:
+		neigh_tables[NEIGH_ARP_TABLE] = tbl;
+		break;
+	case AF_INET6:
+		neigh_tables[NEIGH_ND_TABLE] = tbl;
+		break;
+	case AF_DECnet:
+		neigh_tables[NEIGH_DN_TABLE] = tbl;
+		break;
+	}
 }
 EXPORT_SYMBOL(neigh_table_init);
 
-int neigh_table_clear(int index, struct neigh_table *tbl)
+int neigh_table_clear(struct net *net, struct neigh_table *tbl)
 {
-	neigh_tables[index] = NULL;
+	u8 family = tbl->family;
+
+	switch (family) {
+	case AF_INET:
+		neigh_tables[NEIGH_ARP_TABLE] = NULL;
+		break;
+	case AF_INET6:
+		neigh_tables[NEIGH_ND_TABLE] = NULL;
+		break;
+	case AF_DECnet:
+		neigh_tables[NEIGH_DN_TABLE] = NULL;
+		break;
+	}
+
 	/* It is not clean... Fix it to unload IPv6 module safely */
 	cancel_delayed_work_sync(&tbl->gc_work);
 	del_timer_sync(&tbl->proxy_timer);
@@ -1617,7 +1641,7 @@ int neigh_table_clear(int index, struct neigh_table *tbl)
 	kfree(tbl->phash_buckets);
 	tbl->phash_buckets = NULL;
 
-	remove_proc_entry(tbl->id, init_net.proc_net_stat);
+	remove_proc_entry(tbl->id, net->proc_net_stat);
 
 	free_percpu(tbl->stats);
 	tbl->stats = NULL;

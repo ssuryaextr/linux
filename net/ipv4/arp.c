@@ -1291,7 +1291,7 @@ static int arp_proc_init(void);
 
 void __init arp_init(void)
 {
-	neigh_table_init(NEIGH_ARP_TABLE, &arp_tbl);
+	neigh_table_init(&init_net, &arp_tbl);
 
 	dev_add_pack(&arp_packet_type);
 	arp_proc_init();

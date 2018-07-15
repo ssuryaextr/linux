@@ -593,7 +593,7 @@ static const struct seq_operations dn_neigh_seq_ops = {
 
 void __init dn_neigh_init(void)
 {
-	neigh_table_init(NEIGH_DN_TABLE, &dn_neigh_table);
+	neigh_table_init(&init_net, &dn_neigh_table);
 	proc_create_net("decnet_neigh", 0444, init_net.proc_net,
 			&dn_neigh_seq_ops, sizeof(struct neigh_seq_state));
 }
@@ -601,5 +601,5 @@ void __init dn_neigh_init(void)
 void __exit dn_neigh_cleanup(void)
 {
 	remove_proc_entry("decnet_neigh", init_net.proc_net);
-	neigh_table_clear(NEIGH_DN_TABLE, &dn_neigh_table);
+	neigh_table_clear(&init_net, &dn_neigh_table);
 }
