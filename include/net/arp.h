@@ -9,7 +9,7 @@
 
 static inline struct neigh_table *ipv4_neigh_table(struct net *net)
 {
-	return neigh_find_table(net, AF_INET);
+	return net->ipv4.arp_tbl;
 }
 
 static inline struct neighbour *ipv4_neigh_create(struct net_device *dev,

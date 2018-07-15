@@ -1485,11 +1485,15 @@ EXPORT_SYMBOL(pneigh_enqueue);
 static inline struct neigh_parms *lookup_neigh_parms(struct neigh_table *tbl,
 						      struct net *net, int ifindex)
 {
+	struct net *def_net = &init_net;
 	struct neigh_parms *p;
+
+	if (tbl->family == AF_INET)
+		def_net = neigh_parms_net(p);
 
 	list_for_each_entry(p, &tbl->parms_list, list) {
 		if ((p->dev && p->dev->ifindex == ifindex && net_eq(neigh_parms_net(p), net)) ||
-		    (!p->dev && !ifindex && net_eq(net, &init_net)))
+		    (!p->dev && !ifindex && net_eq(net, def_net)))
 			return p;
 	}
 
@@ -1611,7 +1615,7 @@ void neigh_table_init(struct net *net, struct neigh_table *tbl)
 
 	switch (family) {
 	case AF_INET:
-		neigh_tables[NEIGH_ARP_TABLE] = tbl;
+		net->ipv4.arp_tbl = tbl;
 		break;
 	case AF_INET6:
 		neigh_tables[NEIGH_ND_TABLE] = tbl;
@@ -1629,7 +1633,7 @@ int neigh_table_clear(struct net *net, struct neigh_table *tbl)
 
 	switch (family) {
 	case AF_INET:
-		neigh_tables[NEIGH_ARP_TABLE] = NULL;
+		net->ipv4.arp_tbl = NULL;
 		break;
 	case AF_INET6:
 		neigh_tables[NEIGH_ND_TABLE] = NULL;
@@ -1669,7 +1673,7 @@ struct neigh_table *neigh_find_table(struct net *net, u8 family)
 
 	switch (family) {
 	case AF_INET:
-		tbl = neigh_tables[NEIGH_ARP_TABLE];
+		tbl = net->ipv4.arp_tbl;
 		break;
 	case AF_INET6:
 		tbl = neigh_tables[NEIGH_ND_TABLE];
@@ -2173,10 +2177,12 @@ static int neightbl_set(struct sk_buff *skb, struct nlmsghdr *nlh,
 	}
 
 	err = -ENOENT;
-	if ((tb[NDTA_THRESH1] || tb[NDTA_THRESH2] ||
-	     tb[NDTA_THRESH3] || tb[NDTA_GC_INTERVAL]) &&
-	    !net_eq(net, &init_net))
-		goto errout_tbl_lock;
+	if (tbl->family != AF_INET) {
+		if ((tb[NDTA_THRESH1] || tb[NDTA_THRESH2] ||
+		     tb[NDTA_THRESH3] || tb[NDTA_GC_INTERVAL]) &&
+		    !net_eq(net, &init_net))
+			goto errout_tbl_lock;
+	}
 
 	if (tb[NDTA_THRESH1])
 		tbl->gc_thresh1 = nla_get_u32(tb[NDTA_THRESH1]);

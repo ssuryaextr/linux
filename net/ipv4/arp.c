@@ -152,38 +152,19 @@ static const struct neigh_ops arp_direct_ops = {
 	.connected_output =	neigh_direct_output,
 };
 
-struct neigh_table arp_tbl = {
-	.family		= AF_INET,
-	.key_len	= 4,
-	.protocol	= cpu_to_be16(ETH_P_IP),
-	.hash		= arp_hash,
-	.key_eq		= arp_key_eq,
-	.constructor	= arp_constructor,
-	.proxy_redo	= parp_redo,
-	.id		= "arp_cache",
-	.parms		= {
-		.tbl			= &arp_tbl,
-		.reachable_time		= 30 * HZ,
-		.data	= {
-			[NEIGH_VAR_MCAST_PROBES] = 3,
-			[NEIGH_VAR_UCAST_PROBES] = 3,
-			[NEIGH_VAR_RETRANS_TIME] = 1 * HZ,
-			[NEIGH_VAR_BASE_REACHABLE_TIME] = 30 * HZ,
-			[NEIGH_VAR_DELAY_PROBE_TIME] = 5 * HZ,
-			[NEIGH_VAR_GC_STALETIME] = 60 * HZ,
-			[NEIGH_VAR_QUEUE_LEN_BYTES] = SK_WMEM_MAX,
-			[NEIGH_VAR_PROXY_QLEN] = 64,
-			[NEIGH_VAR_ANYCAST_DELAY] = 1 * HZ,
-			[NEIGH_VAR_PROXY_DELAY]	= (8 * HZ) / 10,
-			[NEIGH_VAR_LOCKTIME] = 1 * HZ,
-		},
-	},
-	.gc_interval	= 30 * HZ,
-	.gc_thresh1	= 128,
-	.gc_thresh2	= 512,
-	.gc_thresh3	= 1024,
+static int parms_data[NEIGH_VAR_DATA_MAX] = {
+	[NEIGH_VAR_MCAST_PROBES] = 3,
+	[NEIGH_VAR_UCAST_PROBES] = 3,
+	[NEIGH_VAR_RETRANS_TIME] = 1 * HZ,
+	[NEIGH_VAR_BASE_REACHABLE_TIME] = 30 * HZ,
+	[NEIGH_VAR_DELAY_PROBE_TIME] = 5 * HZ,
+	[NEIGH_VAR_GC_STALETIME] = 60 * HZ,
+	[NEIGH_VAR_QUEUE_LEN_BYTES] = SK_WMEM_MAX,
+	[NEIGH_VAR_PROXY_QLEN] = 64,
+	[NEIGH_VAR_ANYCAST_DELAY] = 1 * HZ,
+	[NEIGH_VAR_PROXY_DELAY]	= (8 * HZ) / 10,
+	[NEIGH_VAR_LOCKTIME] = 1 * HZ,
 };
-EXPORT_SYMBOL(arp_tbl);
 
 int arp_mc_map(__be32 addr, u8 *haddr, struct net_device *dev, int dir)
 {
@@ -1291,13 +1272,8 @@ static int arp_proc_init(void);
 
 void __init arp_init(void)
 {
-	neigh_table_init(&init_net, &arp_tbl);
-
 	dev_add_pack(&arp_packet_type);
 	arp_proc_init();
-#ifdef CONFIG_SYSCTL
-	neigh_sysctl_register(NULL, &arp_tbl.parms, NULL);
-#endif
 	register_netdevice_notifier(&arp_netdev_notifier);
 }
 
@@ -1426,15 +1402,53 @@ static const struct seq_operations arp_seq_ops = {
 
 static int __net_init arp_net_init(struct net *net)
 {
-	if (!proc_create_net("arp", 0444, net->proc_net, &arp_seq_ops,
-			sizeof(struct neigh_seq_state)))
+	struct neigh_table *arp_tbl;
+
+	arp_tbl = kzalloc(sizeof(*arp_tbl), GFP_KERNEL);
+	if (!arp_tbl)
 		return -ENOMEM;
+
+	if (!proc_create_net("arp", 0444, net->proc_net, &arp_seq_ops,
+			sizeof(struct neigh_seq_state))) {
+		kfree(arp_tbl);
+		return -ENOMEM;
+	}
+
+	arp_tbl->family		= AF_INET;
+	arp_tbl->key_len	= 4;
+	arp_tbl->protocol	= cpu_to_be16(ETH_P_IP);
+	arp_tbl->hash		= arp_hash;
+	arp_tbl->key_eq		= arp_key_eq;
+	arp_tbl->constructor	= arp_constructor;
+	arp_tbl->proxy_redo	= parp_redo;
+	arp_tbl->id		= "arp_cache";
+	arp_tbl->gc_interval	= 30 * HZ;
+	arp_tbl->gc_thresh1	= 128;
+	arp_tbl->gc_thresh2	= 512;
+	arp_tbl->gc_thresh3	= 1024;
+
+	arp_tbl->parms.tbl	= arp_tbl;
+	arp_tbl->parms.reachable_time = 30 * HZ;
+	memcpy(arp_tbl->parms.data, parms_data, sizeof(parms_data));
+
+	neigh_table_init(net, arp_tbl);
+
+#ifdef CONFIG_SYSCTL
+	neigh_sysctl_register(NULL, &arp_tbl->parms, NULL);
+#endif
 	return 0;
 }
 
 static void __net_exit arp_net_exit(struct net *net)
 {
+	struct neigh_table *arp_tbl = ipv4_neigh_table(net);
+
 	remove_proc_entry("arp", net->proc_net);
+#ifdef CONFIG_SYSCTL
+	neigh_sysctl_unregister(&arp_tbl->parms);
+#endif
+	neigh_table_clear(net, arp_tbl);
+	kfree(arp_tbl);
 }
 
 static struct pernet_operations arp_net_ops = {
