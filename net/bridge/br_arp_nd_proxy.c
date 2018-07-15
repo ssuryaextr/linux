@@ -433,7 +433,7 @@ void br_do_suppress_nd(struct sk_buff *skb, struct net_bridge *br,
 		return;
 	}
 
-	n = neigh_lookup(ipv6_stub->nd_tbl, &msg->target, vlandev);
+	n = ipv6_neigh_lookup(vlandev, &msg->target);
 	if (n) {
 		struct net_bridge_fdb_entry *f;
 
