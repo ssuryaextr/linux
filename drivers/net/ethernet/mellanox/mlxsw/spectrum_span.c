@@ -365,6 +365,7 @@ mlxsw_sp_span_entry_gretap4_parms(const struct net_device *to_dev,
 	bool inherit_ttl = !tparm.iph.ttl;
 	union mlxsw_sp_l3addr gw = daddr;
 	struct net_device *l3edev;
+	struct neigh_table *tbl;
 
 	if (!(to_dev->flags & IFF_UP) ||
 	    /* Reject tunnels with GRE keys, checksums, etc. */
@@ -376,9 +377,10 @@ mlxsw_sp_span_entry_gretap4_parms(const struct net_device *to_dev,
 		return mlxsw_sp_span_entry_unoffloadable(sparmsp);
 
 	l3edev = mlxsw_sp_span_gretap4_route(to_dev, &saddr.addr4, &gw.addr4);
+	tbl = ipv4_neigh_table(dev_net(l3edev));
 	return mlxsw_sp_span_entry_tunnel_parms_common(l3edev, saddr, daddr, gw,
 						       tparm.iph.ttl,
-						       &arp_tbl, sparmsp);
+						       tbl, sparmsp);
 }
 
 static int
@@ -466,6 +468,7 @@ mlxsw_sp_span_entry_gretap6_parms(const struct net_device *to_dev,
 	bool inherit_ttl = !tparm.hop_limit;
 	union mlxsw_sp_l3addr gw = daddr;
 	struct net_device *l3edev;
+	struct neigh_table *tbl;
 
 	if (!(to_dev->flags & IFF_UP) ||
 	    /* Reject tunnels with GRE keys, checksums, etc. */
@@ -477,9 +480,10 @@ mlxsw_sp_span_entry_gretap6_parms(const struct net_device *to_dev,
 		return mlxsw_sp_span_entry_unoffloadable(sparmsp);
 
 	l3edev = mlxsw_sp_span_gretap6_route(to_dev, &saddr.addr6, &gw.addr6);
+	tbl = ipv6_neigh_table(dev_net(l3edev));
 	return mlxsw_sp_span_entry_tunnel_parms_common(l3edev, saddr, daddr, gw,
 						       tparm.hop_limit,
-						       &nd_tbl, sparmsp);
+						       tbl, sparmsp);
 }
 
 static int

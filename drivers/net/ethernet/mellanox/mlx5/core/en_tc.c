@@ -45,7 +45,7 @@
 #include <net/tc_act/tc_pedit.h>
 #include <net/tc_act/tc_csum.h>
 #include <net/vxlan.h>
-#include <net/arp.h>
+#include <net/neighbour.h>
 #include "en.h"
 #include "en_rep.h"
 #include "en_tc.h"
@@ -999,13 +999,8 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe)
 	bool neigh_used = false;
 	struct neighbour *n;
 
-	if (m_neigh->family == AF_INET)
-		tbl = &arp_tbl;
-#if IS_ENABLED(CONFIG_IPV6)
-	else if (m_neigh->family == AF_INET6)
-		tbl = &nd_tbl;
-#endif
-	else
+	tbl = neigh_find_table(dev_net(m_neigh->dev), m_neigh->family);
+	if (!tbl)
 		return;
 
 	list_for_each_entry(e, &nhe->encap_list, encap_list) {

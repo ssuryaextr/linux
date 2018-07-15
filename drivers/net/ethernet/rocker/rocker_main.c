@@ -3098,9 +3098,9 @@ static int rocker_netevent_event(struct notifier_block *unused,
 
 	switch (event) {
 	case NETEVENT_NEIGH_UPDATE:
-		if (n->tbl != &arp_tbl)
-			return NOTIFY_DONE;
 		dev = n->dev;
+		if (n->tbl != ipv4_neigh_table(dev_net(dev)))
+			return NOTIFY_DONE;
 		if (!rocker_port_dev_check(dev))
 			return NOTIFY_DONE;
 		rocker_port = netdev_priv(dev);

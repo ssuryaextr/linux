@@ -1298,6 +1298,8 @@ out_unlock:
 
 static void __ipoib_reap_neigh(struct ipoib_dev_priv *priv)
 {
+	struct net *net = dev_net(priv->dev);
+	struct neigh_table *arp_tbl = ipv4_neigh_table(net);
 	struct ipoib_neigh_table *ntbl = &priv->ntbl;
 	struct ipoib_neigh_hash *htbl;
 	unsigned long neigh_obsolete;
@@ -1318,7 +1320,7 @@ static void __ipoib_reap_neigh(struct ipoib_dev_priv *priv)
 		goto out_unlock;
 
 	/* neigh is obsolete if it was idle for two GC periods */
-	dt = 2 * arp_tbl.gc_interval;
+	dt = 2 * arp_tbl->gc_interval;
 	neigh_obsolete = jiffies - dt;
 	/* handle possible race condition */
 	if (test_bit(IPOIB_STOP_NEIGH_GC, &priv->flags))
@@ -1357,12 +1359,14 @@ static void ipoib_reap_neigh(struct work_struct *work)
 {
 	struct ipoib_dev_priv *priv =
 		container_of(work, struct ipoib_dev_priv, neigh_reap_task.work);
+	struct net *net = dev_net(priv->dev);
+	struct neigh_table *arp_tbl = ipv4_neigh_table(net);
 
 	__ipoib_reap_neigh(priv);
 
 	if (!test_bit(IPOIB_STOP_NEIGH_GC, &priv->flags))
 		queue_delayed_work(priv->wq, &priv->neigh_reap_task,
-				   arp_tbl.gc_interval);
+				   arp_tbl->gc_interval);
 }
 
 
@@ -1514,6 +1518,8 @@ void ipoib_neigh_free(struct ipoib_neigh *neigh)
 
 static int ipoib_neigh_hash_init(struct ipoib_dev_priv *priv)
 {
+	struct net *net = dev_net(priv->dev);
+	struct neigh_table *arp_tbl = ipv4_neigh_table(net);
 	struct ipoib_neigh_table *ntbl = &priv->ntbl;
 	struct ipoib_neigh_hash *htbl;
 	struct ipoib_neigh __rcu **buckets;
@@ -1525,7 +1531,7 @@ static int ipoib_neigh_hash_init(struct ipoib_dev_priv *priv)
 	if (!htbl)
 		return -ENOMEM;
 	set_bit(IPOIB_STOP_NEIGH_GC, &priv->flags);
-	size = roundup_pow_of_two(arp_tbl.gc_thresh3);
+	size = roundup_pow_of_two(arp_tbl->gc_thresh3);
 	buckets = kcalloc(size, sizeof(*buckets), GFP_KERNEL);
 	if (!buckets) {
 		kfree(htbl);
@@ -1541,7 +1547,7 @@ static int ipoib_neigh_hash_init(struct ipoib_dev_priv *priv)
 	/* start garbage collection */
 	clear_bit(IPOIB_STOP_NEIGH_GC, &priv->flags);
 	queue_delayed_work(priv->wq, &priv->neigh_reap_task,
-			   arp_tbl.gc_interval);
+			   arp_tbl->gc_interval);
 
 	return 0;
 }

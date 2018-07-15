@@ -309,16 +309,18 @@ void mlx5e_remove_sqs_fwd_rules(struct mlx5e_priv *priv)
 
 static void mlx5e_rep_neigh_update_init_interval(struct mlx5e_rep_priv *rpriv)
 {
-#if IS_ENABLED(CONFIG_IPV6)
-	unsigned long ipv6_interval = NEIGH_VAR(&nd_tbl.parms,
-						DELAY_PROBE_TIME);
-#else
-	unsigned long ipv6_interval = ~0UL;
-#endif
-	unsigned long ipv4_interval = NEIGH_VAR(&arp_tbl.parms,
-						DELAY_PROBE_TIME);
 	struct net_device *netdev = rpriv->netdev;
+	struct net *net = dev_net(netdev);
+	struct neigh_table *arp_table = ipv4_neigh_table(net);
+	struct neigh_table *nd_table = ipv6_neigh_table(net);
+
+	unsigned long ipv4_interval = NEIGH_VAR(&arp_table->parms,
+						DELAY_PROBE_TIME);
+	unsigned long ipv6_interval = ~0UL;
 	struct mlx5e_priv *priv = netdev_priv(netdev);
+
+	if (nd_table)
+		ipv6_interval = NEIGH_VAR(&nd_table->parms, DELAY_PROBE_TIME);
 
 	rpriv->neigh_update.min_interval = min_t(unsigned long, ipv6_interval, ipv4_interval);
 	mlx5_fc_update_sampling_interval(priv->mdev, rpriv->neigh_update.min_interval);
@@ -437,19 +439,22 @@ static int mlx5e_rep_netevent_event(struct notifier_block *nb,
 	struct net_device *netdev = rpriv->netdev;
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct mlx5e_neigh_hash_entry *nhe = NULL;
+	struct net *net = dev_net(netdev);
 	struct mlx5e_neigh m_neigh = {};
+	struct neigh_table *arp_table;
+	struct neigh_table *nd_table;
 	struct neigh_parms *p;
 	struct neighbour *n;
 	bool found = false;
 
+	arp_table = ipv4_neigh_table(net);
+	nd_table = ipv6_neigh_table(net);
+
 	switch (event) {
 	case NETEVENT_NEIGH_UPDATE:
 		n = ptr;
-#if IS_ENABLED(CONFIG_IPV6)
-		if (n->tbl != &nd_tbl && n->tbl != &arp_tbl)
-#else
-		if (n->tbl != &arp_tbl)
-#endif
+
+		if (n->tbl != nd_table && n->tbl != arp_table)
 			return NOTIFY_DONE;
 
 		m_neigh.dev = n->dev;
@@ -493,11 +498,7 @@ static int mlx5e_rep_netevent_event(struct notifier_block *nb,
 		 * changes in the default table, we only care about changes
 		 * done per device delay prob time parameter.
 		 */
-#if IS_ENABLED(CONFIG_IPV6)
-		if (!p->dev || (p->tbl != &nd_tbl && p->tbl != &arp_tbl))
-#else
-		if (!p->dev || p->tbl != &arp_tbl)
-#endif
+		if (!p->dev || (p->tbl != nd_table && p->tbl != arp_table))
 			return NOTIFY_DONE;
 
 		/* We are in atomic context and can't take RTNL mutex,

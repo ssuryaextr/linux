@@ -155,10 +155,12 @@ static int neigh_check_cb(struct neighbour *n)
 
 static void idle_timer_check(struct timer_list *unused)
 {
-	write_lock(&arp_tbl.lock);
-	__neigh_for_each_release(&arp_tbl, neigh_check_cb);
+	struct neigh_table *tbl = ipv4_neigh_table(&init_net);
+
+	write_lock(&tbl->lock);
+	__neigh_for_each_release(tbl, neigh_check_cb);
 	mod_timer(&idle_timer, jiffies + CLIP_CHECK_INTERVAL * HZ);
-	write_unlock(&arp_tbl.lock);
+	write_unlock(&tbl->lock);
 }
 
 static int clip_arp_rcv(struct sk_buff *skb)
@@ -465,7 +467,8 @@ static int clip_setentry(struct atm_vcc *vcc, __be32 ip)
 	rt = ip_route_output(&init_net, ip, 0, 1, 0);
 	if (IS_ERR(rt))
 		return PTR_ERR(rt);
-	neigh = __neigh_lookup(&arp_tbl, &ip, rt->dst.dev, 1);
+	neigh = __neigh_lookup(ipv4_neigh_table(&init_net), &ip,
+			       rt->dst.dev, 1);
 	ip_rt_put(rt);
 	if (!neigh)
 		return -ENOMEM;
@@ -836,7 +839,8 @@ static void *clip_seq_start(struct seq_file *seq, loff_t * pos)
 {
 	struct clip_seq_state *state = seq->private;
 	state->ns.neigh_sub_iter = clip_seq_sub_iter;
-	return neigh_seq_start(seq, pos, &arp_tbl, NEIGH_SEQ_NEIGH_ONLY);
+	return neigh_seq_start(seq, pos, ipv4_neigh_table(&init_net),
+			       NEIGH_SEQ_NEIGH_ONLY);
 }
 
 static int clip_seq_show(struct seq_file *seq, void *v)

@@ -2019,15 +2019,15 @@ mlxsw_sp_neigh_entry_lookup(struct mlxsw_sp *mlxsw_sp, struct neighbour *n)
 static void
 mlxsw_sp_router_neighs_update_interval_init(struct mlxsw_sp *mlxsw_sp)
 {
-	unsigned long interval;
+	/* mlxsw only works with init_net at the moment */
+	struct neigh_table *arp_table = ipv4_neigh_table(&init_net);
+	struct neigh_table *nd_table = ipv6_neigh_table(&init_net);
+	unsigned long interval = NEIGH_VAR(&arp_table->parms, DELAY_PROBE_TIME);
 
-#if IS_ENABLED(CONFIG_IPV6)
-	interval = min_t(unsigned long,
-			 NEIGH_VAR(&arp_tbl.parms, DELAY_PROBE_TIME),
-			 NEIGH_VAR(&nd_tbl.parms, DELAY_PROBE_TIME));
-#else
-	interval = NEIGH_VAR(&arp_tbl.parms, DELAY_PROBE_TIME);
-#endif
+	if (nd_table)
+		interval = min_t(unsigned long, interval,
+				 NEIGH_VAR(&nd_table->parms, DELAY_PROBE_TIME));
+
 	mlxsw_sp->router->neighs_update.interval = jiffies_to_msecs(interval);
 }
 
@@ -2050,7 +2050,7 @@ static void mlxsw_sp_router_neigh_ent_ipv4_process(struct mlxsw_sp *mlxsw_sp,
 
 	dipn = htonl(dip);
 	dev = mlxsw_sp->router->rifs[rif]->dev;
-	n = neigh_lookup(&arp_tbl, &dipn, dev);
+	n = ipv4_neigh_lookup(dev, &dipn);
 	if (!n)
 		return;
 
@@ -2064,6 +2064,7 @@ static void mlxsw_sp_router_neigh_ent_ipv6_process(struct mlxsw_sp *mlxsw_sp,
 						   char *rauhtd_pl,
 						   int rec_index)
 {
+	struct neigh_table *nd_table = ipv6_neigh_table(&init_net);
 	struct net_device *dev;
 	struct neighbour *n;
 	struct in6_addr dip;
@@ -2078,7 +2079,7 @@ static void mlxsw_sp_router_neigh_ent_ipv6_process(struct mlxsw_sp *mlxsw_sp,
 	}
 
 	dev = mlxsw_sp->router->rifs[rif]->dev;
-	n = neigh_lookup(&nd_tbl, &dip, dev);
+	n = neigh_lookup(nd_table, &dip, dev);
 	if (!n)
 		return;
 
@@ -3721,7 +3722,7 @@ mlxsw_sp_nexthop4_group_create(struct mlxsw_sp *mlxsw_sp, struct fib_info *fi)
 		return ERR_PTR(-ENOMEM);
 	nh_grp->priv = fi;
 	INIT_LIST_HEAD(&nh_grp->fib_list);
-	nh_grp->neigh_tbl = &arp_tbl;
+	nh_grp->neigh_tbl = ipv4_neigh_table(&init_net);
 
 	nh_grp->gateway = mlxsw_sp_fi_is_gateway(mlxsw_sp, fi);
 	nh_grp->count = fi->fib_nhs;
@@ -4919,9 +4920,7 @@ mlxsw_sp_nexthop6_group_create(struct mlxsw_sp *mlxsw_sp,
 	if (!nh_grp)
 		return ERR_PTR(-ENOMEM);
 	INIT_LIST_HEAD(&nh_grp->fib_list);
-#if IS_ENABLED(CONFIG_IPV6)
-	nh_grp->neigh_tbl = &nd_tbl;
-#endif
+	nh_grp->neigh_tbl = ipv6_neigh_table(&init_net);
 	mlxsw_sp_rt6 = list_first_entry(&fib6_entry->rt6_list,
 					struct mlxsw_sp_rt6, list);
 	nh_grp->gateway = mlxsw_sp_rt6_is_gateway(mlxsw_sp, mlxsw_sp_rt6->rt);

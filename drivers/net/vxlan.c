@@ -1520,8 +1520,7 @@ static int arp_reduce(struct net_device *dev, struct sk_buff *skb, __be32 vni)
 	    ipv4_is_multicast(tip))
 		goto out;
 
-	n = neigh_lookup(&arp_tbl, &tip, dev);
-
+	n = ipv4_neigh_lookup(dev, &tip);
 	if (n) {
 		struct vxlan_fdb *f;
 		struct sk_buff	*reply;
@@ -1675,8 +1674,7 @@ static int neigh_reduce(struct net_device *dev, struct sk_buff *skb, __be32 vni)
 	    ipv6_addr_is_multicast(&msg->target))
 		goto out;
 
-	n = neigh_lookup(ipv6_stub->nd_tbl, &msg->target, dev);
-
+	n = ipv6_neigh_lookup(dev, &msg->target);
 	if (n) {
 		struct vxlan_fdb *f;
 		struct sk_buff *reply;
@@ -1736,7 +1734,7 @@ static bool route_shortcircuit(struct net_device *dev, struct sk_buff *skb)
 		if (!pskb_may_pull(skb, sizeof(struct iphdr)))
 			return false;
 		pip = ip_hdr(skb);
-		n = neigh_lookup(&arp_tbl, &pip->daddr, dev);
+		n = ipv4_neigh_lookup(dev, &pip->daddr);
 		if (!n && (vxlan->cfg.flags & VXLAN_F_L3MISS)) {
 			union vxlan_addr ipa = {
 				.sin.sin_addr.s_addr = pip->daddr,
@@ -1757,7 +1755,7 @@ static bool route_shortcircuit(struct net_device *dev, struct sk_buff *skb)
 		if (!pskb_may_pull(skb, sizeof(struct ipv6hdr)))
 			return false;
 		pip6 = ipv6_hdr(skb);
-		n = neigh_lookup(ipv6_stub->nd_tbl, &pip6->daddr, dev);
+		n = ipv6_neigh_lookup(dev, &pip6->daddr);
 		if (!n && (vxlan->cfg.flags & VXLAN_F_L3MISS)) {
 			union vxlan_addr ipa = {
 				.sin6.sin6_addr = pip6->daddr,
