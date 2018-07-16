@@ -374,17 +374,70 @@ static inline u32 ndisc_hashfn(const void *pkey, const struct net_device *dev, _
 		(p32[3] * hash_rnd[3]));
 }
 
-static inline struct neighbour *__ipv6_neigh_lookup_noref(struct net_device *dev, const void *pkey)
+static inline struct neigh_table *ipv6_neigh_table(struct net *net)
 {
-	return ___neigh_lookup_noref(&nd_tbl, neigh_key_eq128, ndisc_hashfn, pkey, dev);
+	return neigh_find_table(net, AF_INET6);
 }
 
-static inline struct neighbour *__ipv6_neigh_lookup(struct net_device *dev, const void *pkey)
+static inline struct neighbour *ipv6_neigh_create(struct net_device *dev,
+						  const void *pkey,
+						  bool want_ref)
+{
+	struct neigh_table *tbl = ipv6_neigh_table(dev_net(dev));
+	struct neighbour *n = NULL;
+
+	if (tbl)
+		n = __neigh_create(tbl, pkey, dev, want_ref);
+
+	return n;
+}
+
+static inline struct neighbour *ipv6_neigh_lookup(struct net_device *dev,
+						  const void *pkey)
+{
+	struct neigh_table *tbl = ipv6_neigh_table(dev_net(dev));
+	struct neighbour *n = NULL;
+
+	if (tbl)
+		n = neigh_lookup(tbl, pkey, dev);
+
+	return n;
+}
+
+static inline struct neighbour *__ipv6_neigh_lookup(struct net_device *dev,
+						    const void *pkey, int creat)
+{
+	struct neigh_table *tbl = ipv6_neigh_table(dev_net(dev));
+	struct neighbour *n = NULL;
+
+	if (tbl)
+		n = __neigh_lookup(tbl, pkey, dev, creat);
+
+	return n;
+}
+
+static inline
+struct neighbour *___ipv6_neigh_lookup_noref(struct net_device *dev,
+					     const void *pkey)
+{
+	struct neigh_table *tbl = ipv6_neigh_table(dev_net(dev));
+	struct neighbour *n = NULL;
+
+	if (tbl)
+		n = ___neigh_lookup_noref(tbl, neigh_key_eq128, ndisc_hashfn,
+					  pkey, dev);
+
+	return n;
+}
+
+static inline
+struct neighbour *__ipv6_neigh_lookup_noref(struct net_device *dev,
+					    const void *pkey)
 {
 	struct neighbour *n;
 
 	rcu_read_lock_bh();
-	n = __ipv6_neigh_lookup_noref(dev, pkey);
+	n = ___ipv6_neigh_lookup_noref(dev, pkey);
 	if (n && !refcount_inc_not_zero(&n->refcnt))
 		n = NULL;
 	rcu_read_unlock_bh();
@@ -407,6 +460,14 @@ static inline void __ipv6_confirm_neigh(struct net_device *dev,
 			n->confirmed = now;
 	}
 	rcu_read_unlock_bh();
+}
+
+static inline struct pneigh_entry *ipv6_pneigh_lookup(struct net *net,
+						      const void *key,
+						      struct net_device *dev,
+						      int creat)
+{
+	return pneigh_lookup(ipv6_neigh_table(net), net, key, dev, creat);
 }
 
 int ndisc_init(void);
