@@ -911,21 +911,19 @@ bool fib_metrics_match(struct fib_config *cfg, struct fib_info *fi)
  *					|
  *					|-> {local prefix} (terminal node)
  */
-static int fib_check_nh(struct fib_config *cfg, struct fib_nh *nh,
-			struct netlink_ext_ack *extack)
+int fib_check_nh(struct net *net, struct fib_nh *nh, u32 table, u8 scope,
+		 struct netlink_ext_ack *extack)
 {
 	int err = 0;
-	struct net *net;
 	struct net_device *dev;
 
-	net = cfg->fc_nlinfo.nl_net;
 	if (nh->fib_nh_gw4) {
 		struct fib_result res;
 
 		if (nh->fib_nh_flags & RTNH_F_ONLINK) {
 			unsigned int addr_type;
 
-			if (cfg->fc_scope >= RT_SCOPE_LINK) {
+			if (scope >= RT_SCOPE_LINK) {
 				NL_SET_ERR_MSG(extack,
 					       "Nexthop has invalid scope");
 				return -EINVAL;
@@ -959,7 +957,7 @@ static int fib_check_nh(struct fib_config *cfg, struct fib_nh *nh,
 			struct fib_table *tbl = NULL;
 			struct flowi4 fl4 = {
 				.daddr = nh->fib_nh_gw4,
-				.flowi4_scope = cfg->fc_scope + 1,
+				.flowi4_scope = scope + 1,
 				.flowi4_oif = nh->fib_nh_oif,
 				.flowi4_iif = LOOPBACK_IFINDEX,
 			};
@@ -968,8 +966,8 @@ static int fib_check_nh(struct fib_config *cfg, struct fib_nh *nh,
 			if (fl4.flowi4_scope < RT_SCOPE_LINK)
 				fl4.flowi4_scope = RT_SCOPE_LINK;
 
-			if (cfg->fc_table)
-				tbl = fib_get_table(net, cfg->fc_table);
+			if (table)
+				tbl = fib_get_table(net, table);
 
 			if (tbl)
 				err = fib_table_lookup(tbl, &fl4, &res,
@@ -1311,7 +1309,9 @@ struct fib_info *fib_create_info(struct fib_config *cfg,
 		int linkdown = 0;
 
 		change_nexthops(fi) {
-			err = fib_check_nh(cfg, nexthop_nh, extack);
+			err = fib_check_nh(cfg->fc_nlinfo.nl_net, nexthop_nh,
+					   cfg->fc_table, cfg->fc_scope,
+					   extack);
 			if (err != 0)
 				goto failure;
 			if (nexthop_nh->fib_nh_flags & RTNH_F_LINKDOWN)
