@@ -18,6 +18,7 @@
 #include <linux/if_vlan.h>
 #include <linux/ip.h>
 #include <linux/ipv6.h>
+#include <linux/netdevice.h>
 
 #include "bpf_helpers.h"
 
@@ -37,6 +38,62 @@ struct bpf_map_def SEC("maps") tx_idxmap = {
 	.max_entries = 64,
 };
 
+struct xdp_stats {
+	__u64 dropped;
+	__u64 skipped;
+};
+
+struct bpf_map_def SEC("maps") stats_map = {
+	.type           = BPF_MAP_TYPE_PERCPU_ARRAY,
+	.key_size       = sizeof(u32),
+	.value_size     = sizeof(struct xdp_stats),
+	.max_entries    = 128,
+};
+
+static __always_inline void xdp_stats_rx(struct xdp_md *ctx, int idx,
+					 unsigned long bytes)
+{
+	struct bpf_dev_counter params;
+	struct xdp_stats *stats;
+
+	params.netns_id = 0;
+	params.ifindex = idx;
+	params.pkts = 1;
+	params.bytes = bytes;
+	bpf_dev_counter(ctx, &params, sizeof(params), NETDEV_COUNTER_RX);
+}
+
+static __always_inline void xdp_stats_tx(struct xdp_md *ctx, int idx,
+					 unsigned long bytes)
+{
+	struct bpf_dev_counter params;
+	struct xdp_stats *stats;
+
+	params.netns_id = 0;
+	params.ifindex = idx;
+	params.pkts = 1;
+	params.bytes = bytes;
+	bpf_dev_counter(ctx, &params, sizeof(params), NETDEV_COUNTER_TX);
+}
+
+static __always_inline void xdp_stats_drop(int idx)
+{
+	struct xdp_stats *stats;
+
+	stats = bpf_map_lookup_elem(&stats_map, &idx);
+	if (stats)
+		stats->dropped++;
+}
+
+static __always_inline void xdp_stats_skip(int idx)
+{
+	struct xdp_stats *stats;
+
+	stats = bpf_map_lookup_elem(&stats_map, &idx);
+	if (stats)
+		stats->skipped++;
+}
+
 /* from include/net/ip.h */
 static __always_inline int ip_decrease_ttl(struct iphdr *iph)
 {
@@ -51,20 +108,24 @@ static __always_inline int xdp_fwd_flags(struct xdp_md *ctx, u32 flags)
 {
 	void *data_end = (void *)(long)ctx->data_end;
 	void *data = (void *)(long)ctx->data;
+	struct bpf_dev_counter ctr_params;
 	struct bpf_dev_lookup dev_params;
 	struct bpf_fib_lookup fib_params;
+	int idx = ctx->ingress_ifindex;
 	struct vlan_hdr *vhdr = NULL;
 	struct ipv6hdr *ip6h = NULL;
 	struct ethhdr *eth = data;
 	struct iphdr *iph = NULL;
-	__u32 *idx_enabled;
+	u32 *idx_enabled;
 	u16 h_proto;
 	void *nh;
 	int rc;
 
 	nh = data + sizeof(*eth);
-	if (nh > data_end)
+	if (nh > data_end) {
+		xdp_stats_drop(idx);
 		return XDP_DROP;
+	}
 
 	__builtin_memset(&dev_params, 0, sizeof(dev_params));
 
@@ -72,8 +133,10 @@ static __always_inline int xdp_fwd_flags(struct xdp_md *ctx, u32 flags)
 	if (h_proto == htons(ETH_P_8021Q) || h_proto == htons(ETH_P_8021AD)) {
 		vhdr = nh;
 
-		if (vhdr + 1 > data_end)
+		if (vhdr + 1 > data_end) {
+			xdp_stats_drop(idx);
 			return XDP_DROP;
+		}
 
 		nh += sizeof(*vhdr);
 		dev_params.proto = h_proto;
@@ -81,26 +144,38 @@ static __always_inline int xdp_fwd_flags(struct xdp_md *ctx, u32 flags)
 		h_proto = vhdr->h_vlan_encapsulated_proto;
 	}
 
-	if (h_proto != htons(ETH_P_IP) && h_proto != htons(ETH_P_IPV6))
+	if (h_proto != htons(ETH_P_IP) && h_proto != htons(ETH_P_IPV6)) {
+		xdp_stats_skip(idx);
 		return XDP_PASS;
+	}
 
-	dev_params.ifindex = ctx->ingress_ifindex;
+	dev_params.ifindex = idx;
 	memcpy(&dev_params.dmac, eth->h_dest, ETH_ALEN);
 	rc = bpf_dev_lookup(ctx, &dev_params, sizeof(dev_params),
 			    BPF_DEV_LOOKUP_L3DEV);
-	if (rc != 0)
+	if (rc != 0) {
+		xdp_stats_skip(idx);
 		return XDP_PASS;
+	}
+
+	if (dev_params.ifindex != idx) {
+		xdp_stats_rx(ctx, dev_params.ifindex, ctx->data_end - ctx->data);
+		idx = dev_params.ifindex;
+	}
 
 	__builtin_memset(&fib_params, 0, sizeof(fib_params));
-
 	if (h_proto == htons(ETH_P_IP)) {
 		iph = nh;
 
-		if (iph + 1 > data_end)
+		if (iph + 1 > data_end) {
+			xdp_stats_drop(idx);
 			return XDP_DROP;
+		}
 
-		if (iph->ttl <= 1)
+		if (iph->ttl <= 1) {
+			xdp_stats_skip(idx);
 			return XDP_PASS;
+		}
 
 		fib_params.family	= AF_INET;
 		fib_params.tos		= iph->tos;
@@ -115,11 +190,15 @@ static __always_inline int xdp_fwd_flags(struct xdp_md *ctx, u32 flags)
 		struct in6_addr *dst = (struct in6_addr *) fib_params.ipv6_dst;
 
 		ip6h = nh;
-		if (ip6h + 1 > data_end)
+		if (ip6h + 1 > data_end) {
+			xdp_stats_drop(idx);
 			return XDP_DROP;
+		}
 
-		if (ip6h->hop_limit <= 1)
+		if (ip6h->hop_limit <= 1) {
+			xdp_stats_skip(idx);
 			return XDP_PASS;
+		}
 
 		fib_params.family	= AF_INET6;
 		fib_params.flowinfo	= *(__be32 *)ip6h & IPV6_FLOWINFO_MASK;
@@ -133,25 +212,34 @@ static __always_inline int xdp_fwd_flags(struct xdp_md *ctx, u32 flags)
 		return XDP_PASS;
 	}
 
-	fib_params.ifindex = dev_params.ifindex;
+	fib_params.ifindex = idx;
 
 	rc = bpf_fib_lookup(ctx, &fib_params, sizeof(fib_params), flags);
-	if (rc != 0)
+	if (rc != 0) {
+		xdp_stats_skip(idx);
 		return XDP_PASS;
+	}
 
 	/* convert FIB nexthop device to egress port */
+	idx = fib_params.ifindex;
+
 	dev_params.ifindex = fib_params.ifindex;
 	dev_params.proto = 0;
 	dev_params.vlan_TCI = 0;
 	rc = bpf_dev_lookup(ctx, &dev_params, sizeof(dev_params),
 			    BPF_DEV_LOOKUP_EGRESS);
-	if (rc != 0)
+	if (rc != 0) {
+		xdp_stats_skip(idx);
 		return XDP_PASS;
+	}
+	idx = dev_params.ifindex;
 
 	/* verify egress index has xdp support */
 	idx_enabled = bpf_map_lookup_elem(&tx_idxmap, &dev_params.ifindex);
-	if (!idx_enabled || !(*idx_enabled))
+	if (!idx_enabled || !(*idx_enabled)) {
+		xdp_stats_skip(idx);
 		return XDP_PASS;
+	}
 
 	if (iph)
 		ip_decrease_ttl(iph);
@@ -164,17 +252,23 @@ static __always_inline int xdp_fwd_flags(struct xdp_md *ctx, u32 flags)
 		if (!vhdr) {
 			int delta = sizeof(*vhdr);
 
-			if (bpf_xdp_adjust_head(ctx, -delta))
+			if (bpf_xdp_adjust_head(ctx, -delta)) {
+				xdp_stats_skip(idx);
 				return XDP_PASS;
+			}
 
 			data = (void *)(long)ctx->data;
 			data_end = (void *)(long)ctx->data_end;
 			eth = data;
-			if (eth + 1 > data_end)
+			if (eth + 1 > data_end) {
+				xdp_stats_drop(idx);
 				return XDP_DROP;
+			}
 			vhdr = data + sizeof(*eth);
-			if (vhdr + 1 > data_end)
+			if (vhdr + 1 > data_end) {
+				xdp_stats_drop(idx);
 				return XDP_DROP;
+			}
 		}
 
 		vhdr->h_vlan_TCI = dev_params.vlan_TCI;
@@ -182,20 +276,27 @@ static __always_inline int xdp_fwd_flags(struct xdp_md *ctx, u32 flags)
 		h_proto = dev_params.proto;
 	} else if (vhdr) {
 		/* ingress has a vlan header; egress does not */
-		if (bpf_xdp_adjust_head(ctx, sizeof(*vhdr)))
+		if (bpf_xdp_adjust_head(ctx, sizeof(*vhdr))) {
+			xdp_stats_skip(idx);
 			return XDP_PASS;
+		}
 
 		data = (void *)(long)ctx->data;
 		data_end = (void *)(long)ctx->data_end;
 		eth = data;
-		if (eth + 1 > data_end)
+		if (eth + 1 > data_end) {
+			xdp_stats_drop(idx);
 			return XDP_DROP;
+		}
 	}
 
 	/* update eth header */
 	memcpy(eth->h_dest, fib_params.dmac, ETH_ALEN);
 	memcpy(eth->h_source, fib_params.smac, ETH_ALEN);
 	eth->h_proto = h_proto;
+
+	if (fib_params.ifindex != dev_params.ifindex)
+		xdp_stats_tx(ctx, fib_params.ifindex, ctx->data_end - ctx->data);
 
 	return bpf_redirect_map(&tx_devmap, dev_params.ifindex, 0);
 }
