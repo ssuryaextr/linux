@@ -4668,8 +4668,7 @@ static int bpf_ipv6_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 	 * not needed here. Can not use __ipv6_neigh_lookup_noref here
 	 * because we need to get nd_tbl via the stub
 	 */
-	neigh = ___neigh_lookup_noref(ipv6_stub->nd_tbl, neigh_key_eq128,
-				      ndisc_hashfn, dst, dev);
+	neigh = __neigh_lookup_noref(ipv6_stub->nd_tbl, dst, dev);
 	if (!neigh)
 		return BPF_FIB_LKUP_RET_NO_NEIGH;
 
