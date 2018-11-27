@@ -86,6 +86,7 @@ struct rhashtable {
 	unsigned int			max_elems;
 	struct rhashtable_params	p;
 	bool				rhlist;
+	bool				disable_bh;
 	struct work_struct		run_work;
 	struct mutex                    mutex;
 	spinlock_t			lock;
@@ -129,8 +130,23 @@ struct rhashtable_iter {
 	bool end_of_table;
 };
 
+int __rhashtable_init(struct rhashtable *ht,
+		      const struct rhashtable_params *params,
+		      bool disable_bh);
+static inline
 int rhashtable_init(struct rhashtable *ht,
-		    const struct rhashtable_params *params);
+		    const struct rhashtable_params *params)
+{
+	return __rhashtable_init(ht, params, false);
+}
+
+static inline
+int rhashtable_init_bh(struct rhashtable *ht,
+		       const struct rhashtable_params *params)
+{
+	return __rhashtable_init(ht, params, true);
+}
+
 int rhltable_init(struct rhltable *hlt,
 		  const struct rhashtable_params *params);
 

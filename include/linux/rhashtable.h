@@ -276,11 +276,17 @@ struct rhash_head __rcu **rht_bucket_nested_insert(struct rhashtable *ht,
 #define rht_dereference_rcu(p, ht) \
 	rcu_dereference_check(p, lockdep_rht_mutex_is_held(ht))
 
+#define rht_dereference_rcu_bh(p, ht) \
+	rcu_dereference_bh_check(p, lockdep_rht_mutex_is_held(ht))
+
 #define rht_dereference_bucket(p, tbl, hash) \
 	rcu_dereference_protected(p, lockdep_rht_bucket_is_held(tbl, hash))
 
 #define rht_dereference_bucket_rcu(p, tbl, hash) \
 	rcu_dereference_check(p, lockdep_rht_bucket_is_held(tbl, hash))
+
+#define rht_dereference_bucket_rcu_bh(p, tbl, hash) \
+	rcu_dereference_bh_check(p, lockdep_rht_bucket_is_held(tbl, hash))
 
 #define rht_entry(tpos, pos, member) \
 	({ tpos = container_of(pos, typeof(*tpos), member); 1; })
@@ -403,6 +409,36 @@ static inline struct rhash_head __rcu **rht_bucket_insert(
  */
 #define rht_for_each_rcu(pos, tbl, hash)				\
 	rht_for_each_rcu_continue(pos, *rht_bucket(tbl, hash), tbl, hash)
+
+/**
+ * rht_for_each_rcu_bh_continue - continue iterating over rcu hash chain
+ * @pos:	the &struct rhash_head to use as a loop cursor.
+ * @head:	the previous &struct rhash_head to continue from
+ * @tbl:	the &struct bucket_table
+ * @hash:	the hash value / bucket index
+ *
+ * This hash chain list-traversal primitive may safely run concurrently with
+ * the _rcu_bh mutation primitives such as rhashtable_insert() as long as the
+ * traversal is guarded by rcu_read_lock_bh().
+ */
+#define rht_for_each_rcu_bh_continue(pos, head, tbl, hash)			\
+	for (({barrier(); }),						\
+	     pos = rht_dereference_bucket_rcu_bh(head, tbl, hash);	\
+	     !rht_is_a_nulls(pos);					\
+	     pos = rcu_dereference_raw(pos->next))
+
+/**
+ * rht_for_each_rcu - iterate over rcu hash chain
+ * @pos:	the &struct rhash_head to use as a loop cursor.
+ * @tbl:	the &struct bucket_table
+ * @hash:	the hash value / bucket index
+ *
+ * This hash chain list-traversal primitive may safely run concurrently with
+ * the _rcu mutation primitives such as rhashtable_insert() as long as the
+ * traversal is guarded by rcu_read_lock().
+ */
+#define rht_for_each_rcu_bh(pos, tbl, hash)				\
+	rht_for_each_rcu_bh_continue(pos, *rht_bucket(tbl, hash), tbl, hash)
 
 /**
  * rht_for_each_entry_rcu_continue - continue iterating over rcu hash chain
@@ -532,6 +568,57 @@ static inline void *rhashtable_lookup(
 	const struct rhashtable_params params)
 {
 	struct rhash_head *he = __rhashtable_lookup(ht, key, params);
+
+	return he ? rht_obj(ht, he) : NULL;
+}
+
+/* Internal function, do not use. */
+static inline struct rhash_head *__rhashtable_lookup_bh(
+	struct rhashtable *ht, const void *key,
+	const struct rhashtable_params params)
+{
+	struct rhashtable_compare_arg arg = {
+		.ht = ht,
+		.key = key,
+	};
+	struct bucket_table *tbl;
+	struct rhash_head *he;
+	unsigned int hash;
+
+	tbl = rht_dereference_rcu_bh(ht->tbl, ht);
+restart:
+	hash = rht_key_hashfn(ht, tbl, key, params);
+	rht_for_each_rcu_bh(he, tbl, hash) {
+		if (params.obj_cmpfn ?
+		    params.obj_cmpfn(&arg, rht_obj(ht, he)) :
+		    rhashtable_compare(&arg, rht_obj(ht, he)))
+			continue;
+		return he;
+	}
+
+	/* Ensure we see any new tables. */
+	smp_rmb();
+
+	tbl = rht_dereference_rcu_bh(tbl->future_tbl, ht);
+	if (unlikely(tbl))
+		goto restart;
+
+	return NULL;
+}
+
+/**
+ * rhashtable_lookup_bh - search hash table
+ * @ht:		hash table
+ * @key:	the pointer to the key
+ * @params:	hash table parameters
+ *
+ * Same as rhashtable_lookup but called under rcu_read_lock_bh
+ */
+static inline void *rhashtable_lookup_bh(
+	struct rhashtable *ht, const void *key,
+	const struct rhashtable_params params)
+{
+	struct rhash_head *he = __rhashtable_lookup_bh(ht, key, params);
 
 	return he ? rht_obj(ht, he) : NULL;
 }

@@ -65,6 +65,22 @@ EXPORT_SYMBOL_GPL(lockdep_rht_bucket_is_held);
 #define ASSERT_RHT_MUTEX(HT)
 #endif
 
+static void rhashtable_spin_lock(struct rhashtable *ht)
+{
+	if (ht->disable_bh)
+		spin_lock_bh(&ht->lock);
+	else
+		spin_lock(&ht->lock);
+}
+
+static void rhashtable_spin_unlock(struct rhashtable *ht)
+{
+	if (ht->disable_bh)
+		spin_unlock_bh(&ht->lock);
+	else
+		spin_unlock(&ht->lock);
+}
+
 static void nested_table_free(union nested_table *ntbl, unsigned int size)
 {
 	const unsigned int shift = PAGE_SHIFT - ilog2(sizeof(void *));
@@ -327,10 +343,10 @@ static int rhashtable_rehash_table(struct rhashtable *ht)
 	/* Publish the new table pointer. */
 	rcu_assign_pointer(ht->tbl, new_tbl);
 
-	spin_lock(&ht->lock);
+	rhashtable_spin_lock(ht);
 	list_for_each_entry(walker, &old_tbl->walkers, list)
 		walker->tbl = NULL;
-	spin_unlock(&ht->lock);
+	rhashtable_spin_unlock(ht);
 
 	/* Wait for readers. All new readers will see the new
 	 * table, and thus no references to the old table will
@@ -670,11 +686,11 @@ void rhashtable_walk_enter(struct rhashtable *ht, struct rhashtable_iter *iter)
 	iter->skip = 0;
 	iter->end_of_table = 0;
 
-	spin_lock(&ht->lock);
+	rhashtable_spin_lock(ht);
 	iter->walker.tbl =
 		rcu_dereference_protected(ht->tbl, lockdep_is_held(&ht->lock));
 	list_add(&iter->walker.list, &iter->walker.tbl->walkers);
-	spin_unlock(&ht->lock);
+	rhashtable_spin_unlock(ht);
 }
 EXPORT_SYMBOL_GPL(rhashtable_walk_enter);
 
@@ -686,10 +702,10 @@ EXPORT_SYMBOL_GPL(rhashtable_walk_enter);
  */
 void rhashtable_walk_exit(struct rhashtable_iter *iter)
 {
-	spin_lock(&iter->ht->lock);
+	rhashtable_spin_lock(iter->ht);
 	if (iter->walker.tbl)
 		list_del(&iter->walker.list);
-	spin_unlock(&iter->ht->lock);
+	rhashtable_spin_unlock(iter->ht);
 }
 EXPORT_SYMBOL_GPL(rhashtable_walk_exit);
 
@@ -719,10 +735,10 @@ int rhashtable_walk_start_check(struct rhashtable_iter *iter)
 
 	rcu_read_lock();
 
-	spin_lock(&ht->lock);
+	rhashtable_spin_lock(ht);
 	if (iter->walker.tbl)
 		list_del(&iter->walker.list);
-	spin_unlock(&ht->lock);
+	rhashtable_spin_unlock(ht);
 
 	if (iter->end_of_table)
 		return 0;
@@ -938,12 +954,12 @@ void rhashtable_walk_stop(struct rhashtable_iter *iter)
 
 	ht = iter->ht;
 
-	spin_lock(&ht->lock);
+	rhashtable_spin_lock(ht);
 	if (tbl->rehash < tbl->size)
 		list_add(&iter->walker.list, &tbl->walkers);
 	else
 		iter->walker.tbl = NULL;
-	spin_unlock(&ht->lock);
+	rhashtable_spin_unlock(ht);
 
 out:
 	rcu_read_unlock();
@@ -970,7 +986,7 @@ static u32 rhashtable_jhash2(const void *key, u32 length, u32 seed)
 }
 
 /**
- * rhashtable_init - initialize a new hash table
+ * __rhashtable_init - initialize a new hash table
  * @ht:		hash table to be initialized
  * @params:	configuration parameters
  *
@@ -1011,8 +1027,9 @@ static u32 rhashtable_jhash2(const void *key, u32 length, u32 seed)
  *	.obj_hashfn = my_hash_fn,
  * };
  */
-int rhashtable_init(struct rhashtable *ht,
-		    const struct rhashtable_params *params)
+int __rhashtable_init(struct rhashtable *ht,
+		      const struct rhashtable_params *params,
+		      bool disable_bh)
 {
 	struct bucket_table *tbl;
 	size_t size;
@@ -1024,6 +1041,7 @@ int rhashtable_init(struct rhashtable *ht,
 	memset(ht, 0, sizeof(*ht));
 	mutex_init(&ht->mutex);
 	spin_lock_init(&ht->lock);
+	ht->disable_bh = disable_bh;
 	memcpy(&ht->p, params, sizeof(*params));
 
 	if (params->min_size)
@@ -1076,7 +1094,7 @@ int rhashtable_init(struct rhashtable *ht,
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(rhashtable_init);
+EXPORT_SYMBOL_GPL(__rhashtable_init);
 
 /**
  * rhltable_init - initialize a new hash list table
