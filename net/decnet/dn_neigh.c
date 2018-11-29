@@ -535,7 +535,8 @@ struct elist_cb_state {
 	int t, n;
 };
 
-static void neigh_elist_cb(struct neighbour *neigh, void *_info)
+static void neigh_elist_cb(struct rhashtable *nht, struct neighbour *neigh,
+			   void *_info)
 {
 	struct elist_cb_state *s = _info;
 	struct dn_neigh *dn;

@@ -2585,7 +2585,9 @@ static int neigh_dump_info(struct sk_buff *skb, struct netlink_callback *cb)
 	return skb->len;
 }
 
-void neigh_for_each(struct neigh_table *tbl, void (*cb)(struct neighbour *, void *), void *cookie)
+void neigh_for_each(struct neigh_table *tbl,
+		    void (*cb)(struct rhashtable *, struct neighbour *,
+			       void *), void *cookie)
 {
 	int chain;
 	struct neigh_hash_table *nht;
@@ -2600,7 +2602,7 @@ void neigh_for_each(struct neigh_table *tbl, void (*cb)(struct neighbour *, void
 		for (n = rcu_dereference_bh(nht->hash_buckets[chain]);
 		     n != NULL;
 		     n = rcu_dereference_bh(n->next))
-			cb(n, cookie);
+			cb(NULL, n, cookie);
 	}
 	read_unlock(&tbl->lock);
 	rcu_read_unlock_bh();
