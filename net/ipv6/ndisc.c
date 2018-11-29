@@ -77,6 +77,8 @@ static u32 ndisc_hash(const void *pkey,
 		      const struct net_device *dev,
 		      __u32 *hash_rnd);
 static bool ndisc_key_eq(const struct neighbour *neigh, const void *pkey);
+static int ndisc_key_cmp(struct rhashtable_compare_arg *arg, const void *ptr);
+static struct rhashtable *ndisc_dev_table(struct net_device *dev, bool down);
 static int ndisc_constructor(struct neighbour *neigh);
 static void ndisc_solicit(struct neighbour *neigh, struct sk_buff *skb);
 static void ndisc_error_report(struct neighbour *neigh, struct sk_buff *skb);
@@ -118,6 +120,15 @@ struct neigh_table nd_tbl = {
 	.pdestructor =	pndisc_destructor,
 	.proxy_redo =	pndisc_redo,
 	.id =		"ndisc_cache",
+	.dev_table =	ndisc_dev_table,
+	.rht_params = {
+		.key_offset	= offsetof(struct neighbour, primary_key),
+		.head_offset	= offsetof(struct neighbour, ht_node),
+		.key_len	= sizeof(struct in6_addr),
+		.obj_cmpfn	= ndisc_key_cmp,
+		.automatic_shrinking = true,
+		.locks_mul	= 1,
+	},
 	.parms = {
 		.tbl			= &nd_tbl,
 		.reachable_time		= ND_REACHABLE_TIME,
@@ -140,6 +151,27 @@ struct neigh_table nd_tbl = {
 	.gc_thresh3 =	1024,
 };
 EXPORT_SYMBOL_GPL(nd_tbl);
+
+int ipv6_neigh_table_init(struct inet6_dev *ndev)
+{
+	return rhashtable_init_bh(&ndev->nht, &nd_tbl.rht_params);
+}
+
+void ipv6_neigh_table_fini(struct inet6_dev *ndev)
+{
+	return rhashtable_destroy(&ndev->nht);
+}
+
+static struct rhashtable *ndisc_dev_table(struct net_device *dev, bool down)
+{
+	struct inet6_dev *idev;
+
+	idev = rcu_dereference_bh(dev->ip6_ptr);
+	if (unlikely(!idev || (idev->dead && !down)))
+		return NULL;
+
+	return &idev->nht;
+}
 
 void __ndisc_fill_addr_option(struct sk_buff *skb, int type, void *data,
 			      int data_len, int pad)
@@ -317,6 +349,11 @@ static u32 ndisc_hash(const void *pkey,
 static bool ndisc_key_eq(const struct neighbour *n, const void *pkey)
 {
 	return neigh_key_eq128(n, pkey);
+}
+
+static int ndisc_key_cmp(struct rhashtable_compare_arg *arg, const void *ptr)
+{
+	return !neigh_key_eq128(ptr, arg->key);
 }
 
 static int ndisc_constructor(struct neighbour *neigh)

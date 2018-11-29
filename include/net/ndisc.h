@@ -374,6 +374,9 @@ static inline u32 ndisc_hashfn(const void *pkey, const struct net_device *dev, _
 		(p32[3] * hash_rnd[3]));
 }
 
+int ipv6_neigh_table_init(struct inet6_dev *ndev);
+void ipv6_neigh_table_fini(struct inet6_dev *ndev);
+
 static inline struct neighbour *__ipv6_neigh_lookup_noref(struct net_device *dev, const void *pkey)
 {
 	return __neigh_lookup_noref(&nd_tbl, pkey, dev);

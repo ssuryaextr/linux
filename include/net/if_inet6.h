@@ -200,6 +200,7 @@ struct inet6_dev {
 
 	struct in6_addr		token;
 
+	struct rhashtable	nht;
 	struct neigh_parms	*nd_parms;
 	struct ipv6_devconf	cnf;
 	struct ipv6_devstat	stats;

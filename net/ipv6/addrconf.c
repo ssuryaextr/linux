@@ -392,6 +392,13 @@ static struct inet6_dev *ipv6_add_dev(struct net_device *dev)
 		kfree(ndev);
 		return ERR_PTR(err);
 	}
+	err = ipv6_neigh_table_init(ndev);
+	if (err) {
+		neigh_parms_release(&nd_tbl, ndev->nd_parms);
+		kfree(ndev);
+		return ERR_PTR(err);
+	}
+
 	if (ndev->cnf.forwarding)
 		dev_disable_lro(dev);
 	/* We refer to the device */
@@ -400,6 +407,7 @@ static struct inet6_dev *ipv6_add_dev(struct net_device *dev)
 	if (snmp6_alloc_dev(ndev) < 0) {
 		netdev_dbg(dev, "%s: cannot allocate memory for statistics\n",
 			   __func__);
+		ipv6_neigh_table_fini(ndev);
 		neigh_parms_release(&nd_tbl, ndev->nd_parms);
 		dev_put(dev);
 		kfree(ndev);
@@ -465,6 +473,7 @@ static struct inet6_dev *ipv6_add_dev(struct net_device *dev)
 	return ndev;
 
 err_release:
+	ipv6_neigh_table_fini(ndev);
 	neigh_parms_release(&nd_tbl, ndev->nd_parms);
 	ndev->dead = 1;
 	in6_dev_finish_destroy(ndev);
@@ -3679,9 +3688,6 @@ static int addrconf_ifdown(struct net_device *dev, int how)
 	if (how) {
 		idev->dead = 1;
 
-		/* protected by rtnl_lock */
-		RCU_INIT_POINTER(dev->ip6_ptr, NULL);
-
 		/* Step 1.5: remove snmp6 entry */
 		snmp6_unregister_dev(idev);
 
@@ -3812,6 +3818,11 @@ restart:
 		addrconf_sysctl_unregister(idev);
 		neigh_parms_release(&nd_tbl, idev->nd_parms);
 		neigh_ifdown(&nd_tbl, dev);
+		ipv6_neigh_table_fini(idev);
+
+		/* protected by rtnl_lock */
+		RCU_INIT_POINTER(dev->ip6_ptr, NULL);
+
 		in6_dev_put(idev);
 	}
 	return 0;
