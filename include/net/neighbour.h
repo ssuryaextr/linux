@@ -24,7 +24,7 @@
 #include <linux/rcupdate.h>
 #include <linux/seq_file.h>
 #include <linux/bitmap.h>
-
+#include <linux/rhashtable.h>
 #include <linux/err.h>
 #include <linux/sysctl.h>
 #include <linux/workqueue.h>
@@ -133,6 +133,7 @@ struct neigh_statistics {
 #define NEIGH_CACHE_STAT_INC(tbl, field) this_cpu_inc((tbl)->stats->field)
 
 struct neighbour {
+	struct rhash_head	ht_node;
 	struct neighbour __rcu	*next;
 	struct neigh_table	*tbl;
 	struct neigh_parms	*parms;
@@ -203,6 +204,9 @@ struct neigh_table {
 	void			(*pdestructor)(struct pneigh_entry *);
 	void			(*proxy_redo)(struct sk_buff *skb);
 	char			*id;
+	struct rhashtable	*(*dev_table)(struct net_device *dev,
+					      bool down);
+	struct rhashtable_params rht_params;
 	struct neigh_parms	parms;
 	struct list_head	parms_list;
 	int			gc_interval;
