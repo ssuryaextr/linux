@@ -75,6 +75,19 @@ static bool dn_key_eq(const struct neighbour *neigh, const void *pkey)
 	return neigh_key_eq16(neigh, pkey);
 }
 
+static int dn_key_cmp(struct rhashtable_compare_arg *arg, const void *ptr)
+{
+	return !neigh_key_eq16(ptr, arg->key);
+}
+
+static struct rhashtable *dn_dev_table(struct net_device *dev, bool down)
+{
+	struct dn_dev *dn_dev;
+
+	dn_dev = rcu_dereference_bh(dev->dn_ptr);
+	return dn_dev ? &dn_dev->nht : NULL;
+}
+
 struct neigh_table dn_neigh_table = {
 	.family =			PF_DECnet,
 	.entry_size =			NEIGH_ENTRY_SIZE(sizeof(struct dn_neigh)),
@@ -83,6 +96,15 @@ struct neigh_table dn_neigh_table = {
 	.hash =				dn_neigh_hash,
 	.key_eq =			dn_key_eq,
 	.constructor =			dn_neigh_construct,
+	.dev_table =			dn_dev_table,
+	.rht_params = {
+		.key_offset  = offsetof(struct neighbour, primary_key),
+		.head_offset = offsetof(struct neighbour, ht_node),
+		.key_len     = sizeof(__le16),
+		.obj_cmpfn   = dn_key_cmp,
+		.automatic_shrinking = true,
+		.locks_mul   = 1,
+	},
 	.id =				"dn_neigh_cache",
 	.parms ={
 		.tbl =			&dn_neigh_table,
@@ -107,6 +129,16 @@ struct neigh_table dn_neigh_table = {
 	.gc_thresh2 =			512,
 	.gc_thresh3 =			1024,
 };
+
+int dn_neigh_table_init(struct dn_dev *dn_db)
+{
+	return rhashtable_init_bh(&dn_db->nht, &dn_neigh_table.rht_params);
+}
+
+void dn_neigh_table_fini(struct dn_dev *dn_db)
+{
+	rhashtable_destroy(&dn_db->nht);
+}
 
 static int dn_neigh_construct(struct neighbour *neigh)
 {

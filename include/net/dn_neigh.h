@@ -17,6 +17,9 @@ struct dn_neigh {
 	__u8 priority;
 };
 
+int dn_neigh_table_init(struct dn_dev *dn_db);
+void dn_neigh_table_fini(struct dn_dev *dn_db);
+
 void dn_neigh_init(void);
 void dn_neigh_cleanup(void);
 int dn_neigh_router_hello(struct net *net, struct sock *sk, struct sk_buff *skb);

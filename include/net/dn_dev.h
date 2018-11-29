@@ -96,6 +96,7 @@ struct dn_dev {
 	struct neighbour *router; /* Default router on circuit */
 	struct neighbour *peer;   /* Peer on pointopoint links */
 	unsigned long uptime;     /* Time device went up in jiffies */
+	struct rhashtable nht;
 };
 
 struct dn_short_packet {

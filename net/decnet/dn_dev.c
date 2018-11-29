@@ -1097,6 +1097,11 @@ static struct dn_dev *dn_dev_create(struct net_device *dev, int *err)
 
 	memcpy(&dn_db->parms, p, sizeof(struct dn_dev_parms));
 
+	if (dn_neigh_table_init(dn_db)) {
+		kfree(dn_db);
+		return NULL;
+	}
+
 	rcu_assign_pointer(dev->dn_ptr, dn_db);
 	dn_db->dev = dev;
 	timer_setup(&dn_db->timer, dn_dev_timer_func, 0);
@@ -1106,6 +1111,7 @@ static struct dn_dev *dn_dev_create(struct net_device *dev, int *err)
 	dn_db->neigh_parms = neigh_parms_alloc(dev, &dn_neigh_table);
 	if (!dn_db->neigh_parms) {
 		RCU_INIT_POINTER(dev->dn_ptr, NULL);
+		dn_neigh_table_fini(dn_db);
 		kfree(dn_db);
 		return NULL;
 	}
@@ -1113,6 +1119,7 @@ static struct dn_dev *dn_dev_create(struct net_device *dev, int *err)
 	if (dn_db->parms.up) {
 		if (dn_db->parms.up(dev) < 0) {
 			neigh_parms_release(&dn_neigh_table, dn_db->neigh_parms);
+			dn_neigh_table_fini(dn_db);
 			dev->dn_ptr = NULL;
 			kfree(dn_db);
 			return NULL;
@@ -1212,6 +1219,7 @@ static void dn_dev_delete(struct net_device *dev)
 
 	neigh_parms_release(&dn_neigh_table, dn_db->neigh_parms);
 	neigh_ifdown(&dn_neigh_table, dev);
+	dn_neigh_table_fini(dn_db);
 
 	if (dn_db->router)
 		neigh_release(dn_db->router);
