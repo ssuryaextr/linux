@@ -125,6 +125,8 @@
  */
 static u32 arp_hash(const void *pkey, const struct net_device *dev, __u32 *hash_rnd);
 static bool arp_key_eq(const struct neighbour *n, const void *pkey);
+static int arp_key_cmp(struct rhashtable_compare_arg *arg, const void *ptr);
+static struct rhashtable *arp_dev_table(struct net_device *dev, bool down);
 static int arp_constructor(struct neighbour *neigh);
 static void arp_solicit(struct neighbour *neigh, struct sk_buff *skb);
 static void arp_error_report(struct neighbour *neigh, struct sk_buff *skb);
@@ -161,6 +163,15 @@ struct neigh_table arp_tbl = {
 	.constructor	= arp_constructor,
 	.proxy_redo	= parp_redo,
 	.id		= "arp_cache",
+	.dev_table      = arp_dev_table,
+	.rht_params	= {
+		.key_offset  = offsetof(struct neighbour, primary_key),
+		.head_offset = offsetof(struct neighbour, ht_node),
+		.key_len     = 4,
+		.obj_cmpfn   = arp_key_cmp,
+		.automatic_shrinking = true,
+		.locks_mul   = 1,
+	},
 	.parms		= {
 		.tbl			= &arp_tbl,
 		.reachable_time		= 30 * HZ,
@@ -184,6 +195,27 @@ struct neigh_table arp_tbl = {
 	.gc_thresh3	= 1024,
 };
 EXPORT_SYMBOL(arp_tbl);
+
+int ipv4_neigh_table_init(struct in_device *in_dev)
+{
+	return rhashtable_init_bh(&in_dev->nht, &arp_tbl.rht_params);
+}
+
+void ipv4_neigh_table_fini(struct in_device *in_dev)
+{
+	rhashtable_destroy(&in_dev->nht);
+}
+
+static struct rhashtable *arp_dev_table(struct net_device *dev, bool down)
+{
+	struct in_device *in_dev;
+
+	in_dev = rcu_dereference_bh(dev->ip_ptr);
+	if (unlikely(!in_dev || (in_dev->dead && !down)))
+		return NULL;
+
+	return &in_dev->nht;
+}
 
 int arp_mc_map(__be32 addr, u8 *haddr, struct net_device *dev, int dir)
 {
@@ -219,6 +251,11 @@ static u32 arp_hash(const void *pkey,
 static bool arp_key_eq(const struct neighbour *neigh, const void *pkey)
 {
 	return neigh_key_eq32(neigh, pkey);
+}
+
+static int arp_key_cmp(struct rhashtable_compare_arg *arg, const void *ptr)
+{
+	return !neigh_key_eq32(ptr, arg->key);
 }
 
 static int arp_constructor(struct neighbour *neigh)

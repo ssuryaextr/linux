@@ -45,6 +45,7 @@ struct in_device {
 	struct timer_list	mr_gq_timer;	/* general query timer */
 	struct timer_list	mr_ifc_timer;	/* interface change timer */
 
+	struct rhashtable	nht;
 	struct neigh_parms	*arp_parms;
 	struct ipv4_devconf	cnf;
 	struct rcu_head		rcu_head;

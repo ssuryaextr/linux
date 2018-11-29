@@ -18,6 +18,9 @@ static inline u32 arp_hashfn(const void *pkey, const struct net_device *dev, u32
 	return val * hash_rnd[0];
 }
 
+int ipv4_neigh_table_init(struct in_device *in_dev);
+void ipv4_neigh_table_fini(struct in_device *in_dev);
+
 static inline struct neighbour *__ipv4_neigh_lookup_noref(struct net_device *dev, u32 key)
 {
 	if (dev->flags & (IFF_LOOPBACK | IFF_POINTOPOINT))

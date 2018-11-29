@@ -261,9 +261,15 @@ static struct in_device *inetdev_init(struct net_device *dev)
 			sizeof(in_dev->cnf));
 	in_dev->cnf.sysctl = NULL;
 	in_dev->dev = dev;
+
+	err = ipv4_neigh_table_init(in_dev);
+	if (err)
+		goto out_kfree;
+
 	in_dev->arp_parms = neigh_parms_alloc(dev, &arp_tbl);
 	if (!in_dev->arp_parms)
-		goto out_kfree;
+		goto hash_destroy;
+
 	if (IPV4_DEVCONF(in_dev->cnf, FORWARDING))
 		dev_disable_lro(dev);
 	/* Reference in_dev->dev */
@@ -286,6 +292,8 @@ static struct in_device *inetdev_init(struct net_device *dev)
 	rcu_assign_pointer(dev->ip_ptr, in_dev);
 out:
 	return in_dev ?: ERR_PTR(err);
+hash_destroy:
+	ipv4_neigh_table_fini(in_dev);
 out_kfree:
 	kfree(in_dev);
 	in_dev = NULL;
@@ -316,12 +324,13 @@ static void inetdev_destroy(struct in_device *in_dev)
 		inet_free_ifa(ifa);
 	}
 
-	RCU_INIT_POINTER(dev->ip_ptr, NULL);
 
 	devinet_sysctl_unregister(in_dev);
 	neigh_parms_release(&arp_tbl, in_dev->arp_parms);
 	arp_ifdown(dev);
+	ipv4_neigh_table_fini(in_dev);
 
+	RCU_INIT_POINTER(dev->ip_ptr, NULL);
 	call_rcu(&in_dev->rcu_head, in_dev_rcu_put);
 }
 
