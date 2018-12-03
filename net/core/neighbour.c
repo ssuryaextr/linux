@@ -155,9 +155,14 @@ static int __neigh_forced_gc(struct neigh_table *tbl, struct net_device *dev,
 	struct rhashtable *nht;
 	struct neighbour *n;
 	int shrunk = 0;
+	int nelems;
 
 	nht = tbl->dev_table(dev, 0);
 	if (!nht)
+		return 0;
+
+	nelems = atomic_read(&nht->nelems);
+	if (nelems < 2)
 		return 0;
 
 	rhashtable_walk_enter(nht, &hti);
@@ -172,6 +177,10 @@ static int __neigh_forced_gc(struct neigh_table *tbl, struct net_device *dev,
 
 		if (neigh_del(n, state, NTF_EXT_LEARNED, nht, tbl))
 			shrunk = 1;
+
+		nelems = atomic_read(&nht->nelems);
+		if (nelems < 2)
+			break;
 	}
 
 	rhashtable_walk_stop(&hti);
