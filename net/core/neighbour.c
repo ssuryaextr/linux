@@ -148,7 +148,8 @@ bool neigh_remove_one(struct neighbour *ndel, struct neigh_table *tbl)
 	return neigh_del(ndel, 0, 0, rht, tbl);
 }
 
-static int __neigh_forced_gc(struct neigh_table *tbl, struct net_device *dev)
+static int __neigh_forced_gc(struct neigh_table *tbl, struct net_device *dev,
+			     u8 state)
 {
 	struct rhashtable_iter hti;
 	struct rhashtable *nht;
@@ -169,7 +170,7 @@ static int __neigh_forced_gc(struct neigh_table *tbl, struct net_device *dev)
 			continue;
 		}
 
-		if (neigh_del(n, NUD_PERMANENT, NTF_EXT_LEARNED, nht, tbl))
+		if (neigh_del(n, state, NTF_EXT_LEARNED, nht, tbl))
 			shrunk = 1;
 	}
 
@@ -179,10 +180,12 @@ static int __neigh_forced_gc(struct neigh_table *tbl, struct net_device *dev)
 	return shrunk;
 }
 
-static int neigh_forced_gc(struct neigh_table *tbl)
+static int neigh_forced_gc(struct neigh_table *tbl, u8 state)
 {
 	struct net *net;
 	int shrunk = 0;
+
+	state |= NUD_PERMANENT;
 
 	NEIGH_CACHE_STAT_INC(tbl, forced_gc_runs);
 
@@ -192,7 +195,7 @@ static int neigh_forced_gc(struct neigh_table *tbl)
 		struct net_device *dev;
 
 		for_each_netdev_rcu(net, dev) {
-			if (__neigh_forced_gc(tbl, dev))
+			if (__neigh_forced_gc(tbl, dev, state))
 				shrunk = 1;
 		}
 	}
@@ -350,16 +353,16 @@ static struct neighbour *neigh_alloc(struct neigh_table *tbl, struct net_device 
 	int entries;
 
 	entries = atomic_inc_return(&tbl->entries) - 1;
-	if (entries >= tbl->gc_thresh3 ||
-	    (entries >= tbl->gc_thresh2 &&
-	     time_after(now, tbl->last_flush + 5 * HZ))) {
-		if (!neigh_forced_gc(tbl) &&
-		    entries >= tbl->gc_thresh3) {
+	if (entries >= tbl->gc_thresh3) {
+		if (!neigh_forced_gc(tbl, 0)) {
 			net_info_ratelimited("%s: neighbor table overflow!\n",
 					     tbl->id);
 			NEIGH_CACHE_STAT_INC(tbl, table_fulls);
 			goto out_entries;
 		}
+	} else if (entries >= tbl->gc_thresh2 &&
+		time_after(now, tbl->last_flush + 5 * HZ)) {
+		neigh_forced_gc(tbl, NUD_STALE);
 	}
 
 	n = kzalloc(tbl->entry_size + dev->neigh_priv_len, GFP_ATOMIC);
