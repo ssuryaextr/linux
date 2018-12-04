@@ -10,14 +10,6 @@
 
 extern struct neigh_table arp_tbl;
 
-static inline u32 arp_hashfn(const void *pkey, const struct net_device *dev, u32 *hash_rnd)
-{
-	u32 key = *(const u32 *)pkey;
-	u32 val = key ^ hash32_ptr(dev);
-
-	return val * hash_rnd[0];
-}
-
 int ipv4_neigh_table_init(struct in_device *in_dev);
 void ipv4_neigh_table_fini(struct in_device *in_dev);
 

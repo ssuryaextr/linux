@@ -134,15 +134,14 @@ struct neigh_statistics {
 
 struct neighbour {
 	struct rhash_head	ht_node;
-	struct neighbour __rcu	*next;
 	struct neigh_table	*tbl;
 	struct neigh_parms	*parms;
 	unsigned long		confirmed;
 	unsigned long		updated;
 	rwlock_t		lock;
 	refcount_t		refcnt;
-	struct sk_buff_head	arp_queue;
 	unsigned int		arp_queue_len_bytes;
+	struct sk_buff_head	arp_queue;
 	struct timer_list	timer;
 	unsigned long		used;
 	atomic_t		probes;
@@ -182,23 +181,11 @@ struct pneigh_entry {
 
 #define NEIGH_NUM_HASH_RND	4
 
-struct neigh_hash_table {
-	struct neighbour __rcu	**hash_buckets;
-	unsigned int		hash_shift;
-	__u32			hash_rnd[NEIGH_NUM_HASH_RND];
-	struct rcu_head		rcu;
-};
-
-
 struct neigh_table {
 	int			family;
 	unsigned int		entry_size;
 	unsigned int		key_len;
 	__be16			protocol;
-	__u32			(*hash)(const void *pkey,
-					const struct net_device *dev,
-					__u32 *hash_rnd);
-	bool			(*key_eq)(const struct neighbour *, const void *pkey);
 	int			(*constructor)(struct neighbour *);
 	int			(*pconstructor)(struct pneigh_entry *);
 	void			(*pdestructor)(struct pneigh_entry *);
@@ -221,7 +208,6 @@ struct neigh_table {
 	rwlock_t		lock;
 	unsigned long		last_rand;
 	struct neigh_statistics	__percpu *stats;
-	struct neigh_hash_table __rcu *nht;
 	struct pneigh_entry	**phash_buckets;
 };
 
@@ -278,11 +264,7 @@ static inline struct neighbour *__neigh_lookup_noref(struct neigh_table *tbl,
 						     const void *pkey,
 						     struct net_device *dev)
 {
-	struct neigh_hash_table *nht = rcu_dereference_bh(tbl->nht);
 	struct rhashtable *rht = tbl->dev_table(dev, 0);
-	u32 hash_val;
-
-	hash_val = tbl->hash(pkey, dev, nht->hash_rnd) >> (32 - nht->hash_shift);
 
 	if (likely(rht)) {
 		struct neighbour *n;
@@ -363,7 +345,6 @@ void pneigh_for_each(struct neigh_table *tbl,
 struct neigh_seq_state {
 	struct seq_net_private p;
 	struct neigh_table *tbl;
-	struct neigh_hash_table *nht;
 	void *(*neigh_sub_iter)(struct neigh_seq_state *state,
 				struct neighbour *n, loff_t *pos);
 	unsigned int bucket;

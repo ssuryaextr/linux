@@ -123,8 +123,6 @@
 /*
  *	Interface to generic neighbour cache.
  */
-static u32 arp_hash(const void *pkey, const struct net_device *dev, __u32 *hash_rnd);
-static bool arp_key_eq(const struct neighbour *n, const void *pkey);
 static int arp_key_cmp(struct rhashtable_compare_arg *arg, const void *ptr);
 static struct rhashtable *arp_dev_table(struct net_device *dev, bool down);
 static int arp_constructor(struct neighbour *neigh);
@@ -158,8 +156,6 @@ struct neigh_table arp_tbl = {
 	.family		= AF_INET,
 	.key_len	= 4,
 	.protocol	= cpu_to_be16(ETH_P_IP),
-	.hash		= arp_hash,
-	.key_eq		= arp_key_eq,
 	.constructor	= arp_constructor,
 	.proxy_redo	= parp_redo,
 	.id		= "arp_cache",
@@ -238,19 +234,6 @@ int arp_mc_map(__be32 addr, u8 *haddr, struct net_device *dev, int dir)
 		}
 	}
 	return -EINVAL;
-}
-
-
-static u32 arp_hash(const void *pkey,
-		    const struct net_device *dev,
-		    __u32 *hash_rnd)
-{
-	return arp_hashfn(pkey, dev, hash_rnd);
-}
-
-static bool arp_key_eq(const struct neighbour *neigh, const void *pkey)
-{
-	return neigh_key_eq32(neigh, pkey);
 }
 
 static int arp_key_cmp(struct rhashtable_compare_arg *arg, const void *ptr)

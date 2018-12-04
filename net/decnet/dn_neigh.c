@@ -63,18 +63,6 @@ static const struct neigh_ops dn_neigh_ops = {
 	.connected_output =	dn_neigh_output,
 };
 
-static u32 dn_neigh_hash(const void *pkey,
-			 const struct net_device *dev,
-			 __u32 *hash_rnd)
-{
-	return jhash_2words(*(__u16 *)pkey, 0, hash_rnd[0]);
-}
-
-static bool dn_key_eq(const struct neighbour *neigh, const void *pkey)
-{
-	return neigh_key_eq16(neigh, pkey);
-}
-
 static int dn_key_cmp(struct rhashtable_compare_arg *arg, const void *ptr)
 {
 	return !neigh_key_eq16(ptr, arg->key);
@@ -93,8 +81,6 @@ struct neigh_table dn_neigh_table = {
 	.entry_size =			NEIGH_ENTRY_SIZE(sizeof(struct dn_neigh)),
 	.key_len =			sizeof(__le16),
 	.protocol =			cpu_to_be16(ETH_P_DNA_RT),
-	.hash =				dn_neigh_hash,
-	.key_eq =			dn_key_eq,
 	.constructor =			dn_neigh_construct,
 	.dev_table =			dn_dev_table,
 	.rht_params = {

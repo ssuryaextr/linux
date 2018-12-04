@@ -73,10 +73,6 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv6.h>
 
-static u32 ndisc_hash(const void *pkey,
-		      const struct net_device *dev,
-		      __u32 *hash_rnd);
-static bool ndisc_key_eq(const struct neighbour *neigh, const void *pkey);
 static int ndisc_key_cmp(struct rhashtable_compare_arg *arg, const void *ptr);
 static struct rhashtable *ndisc_dev_table(struct net_device *dev, bool down);
 static int ndisc_constructor(struct neighbour *neigh);
@@ -113,8 +109,6 @@ struct neigh_table nd_tbl = {
 	.family =	AF_INET6,
 	.key_len =	sizeof(struct in6_addr),
 	.protocol =	cpu_to_be16(ETH_P_IPV6),
-	.hash =		ndisc_hash,
-	.key_eq =	ndisc_key_eq,
 	.constructor =	ndisc_constructor,
 	.pconstructor =	pndisc_constructor,
 	.pdestructor =	pndisc_destructor,
@@ -338,18 +332,6 @@ int ndisc_mc_map(const struct in6_addr *addr, char *buf, struct net_device *dev,
 	return -EINVAL;
 }
 EXPORT_SYMBOL(ndisc_mc_map);
-
-static u32 ndisc_hash(const void *pkey,
-		      const struct net_device *dev,
-		      __u32 *hash_rnd)
-{
-	return ndisc_hashfn(pkey, dev, hash_rnd);
-}
-
-static bool ndisc_key_eq(const struct neighbour *n, const void *pkey)
-{
-	return neigh_key_eq128(n, pkey);
-}
 
 static int ndisc_key_cmp(struct rhashtable_compare_arg *arg, const void *ptr)
 {
