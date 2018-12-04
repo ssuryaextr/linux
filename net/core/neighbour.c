@@ -118,20 +118,15 @@ unsigned long neigh_rand_reach_time(unsigned long base)
 }
 EXPORT_SYMBOL(neigh_rand_reach_time);
 
-
 static bool neigh_del(struct neighbour *n, __u8 state, __u8 flags,
-		      struct neighbour __rcu **np, struct neigh_table *tbl)
+		      struct rhashtable *nht, struct neigh_table *tbl)
 {
 	bool retval = false;
 
 	write_lock(&n->lock);
 	if (refcount_read(&n->refcnt) == 1 && !(n->nud_state & state) &&
 	    !(n->flags & flags)) {
-		struct neighbour *neigh;
-
-		neigh = rcu_dereference_protected(n->next,
-						  lockdep_is_held(&tbl->lock));
-		rcu_assign_pointer(*np, neigh);
+		rhashtable_remove_fast(nht, &n->ht_node, n->tbl->rht_params);
 		n->dead = 1;
 		retval = true;
 	}
@@ -145,29 +140,57 @@ bool neigh_remove_one(struct neighbour *ndel, struct neigh_table *tbl)
 {
 	struct neigh_hash_table *nht;
 	void *pkey = ndel->primary_key;
+	struct rhashtable *rht;
 	u32 hash_val;
-	struct neighbour *n;
-	struct neighbour __rcu **np;
 
 	nht = rcu_dereference_protected(tbl->nht,
 					lockdep_is_held(&tbl->lock));
 	hash_val = tbl->hash(pkey, ndel->dev, nht->hash_rnd);
 	hash_val = hash_val >> (32 - nht->hash_shift);
 
-	np = &nht->hash_buckets[hash_val];
-	while ((n = rcu_dereference_protected(*np,
-					      lockdep_is_held(&tbl->lock)))) {
-		if (n == ndel)
-			return neigh_del(n, 0, 0, np, tbl);
-		np = &n->next;
+	rht = tbl->dev_table(ndel->dev, 0);
+
+	if (WARN_ON(!rht))   /* dev table went away with a neighbor present */
+		return false;
+
+	return neigh_del(ndel, 0, 0, rht, tbl);
+}
+
+static int __neigh_forced_gc(struct neigh_table *tbl, struct net_device *dev)
+{
+	struct rhashtable_iter hti;
+	struct rhashtable *nht;
+	struct neighbour *n;
+	int shrunk = 0;
+
+	nht = tbl->dev_table(dev, 0);
+	if (!nht)
+		return 0;
+
+	rhashtable_walk_enter(nht, &hti);
+	rhashtable_walk_start(&hti);
+
+	while ((n = rhashtable_walk_next(&hti))) {
+		if (IS_ERR(n)) {
+			if (PTR_ERR(n) != -EAGAIN)
+				break;
+			continue;
+		}
+
+		if (neigh_del(n, NUD_PERMANENT, NTF_EXT_LEARNED, nht, tbl))
+			shrunk = 1;
 	}
-	return false;
+
+	rhashtable_walk_stop(&hti);
+	rhashtable_walk_exit(&hti);
+
+	return shrunk;
 }
 
 static int neigh_forced_gc(struct neigh_table *tbl)
 {
+	struct net *net;
 	int shrunk = 0;
-	int i;
 	struct neigh_hash_table *nht;
 
 	NEIGH_CACHE_STAT_INC(tbl, forced_gc_runs);
@@ -175,28 +198,23 @@ static int neigh_forced_gc(struct neigh_table *tbl)
 	write_lock_bh(&tbl->lock);
 	nht = rcu_dereference_protected(tbl->nht,
 					lockdep_is_held(&tbl->lock));
-	for (i = 0; i < (1 << nht->hash_shift); i++) {
-		struct neighbour *n;
-		struct neighbour __rcu **np;
+	write_unlock_bh(&tbl->lock);
 
-		np = &nht->hash_buckets[i];
-		while ((n = rcu_dereference_protected(*np,
-					lockdep_is_held(&tbl->lock))) != NULL) {
-			/* Neighbour record may be discarded if:
-			 * - nobody refers to it.
-			 * - it is not permanent
-			 */
-			if (neigh_del(n, NUD_PERMANENT, NTF_EXT_LEARNED, np,
-				      tbl)) {
+	rcu_read_lock_bh();
+
+	for_each_net_rcu(net) {
+		struct net_device *dev;
+
+		for_each_netdev_rcu(net, dev) {
+			if (__neigh_forced_gc(tbl, dev))
 				shrunk = 1;
-				continue;
-			}
-			np = &n->next;
 		}
 	}
 
-	tbl->last_flush = jiffies;
+	rcu_read_unlock_bh();
 
+	write_lock_bh(&tbl->lock);
+	tbl->last_flush = jiffies;
 	write_unlock_bh(&tbl->lock);
 
 	return shrunk;
@@ -232,18 +250,46 @@ static void pneigh_queue_purge(struct sk_buff_head *list)
 	}
 }
 
-static void __neigh_flush_dev(struct neigh_table *tbl, struct neighbour *n,
-			      struct neighbour __rcu **np, void *arg)
+static void neigh_dev_for_each(struct neigh_table *tbl, struct net_device *dev,
+			       void (*cb)(struct rhashtable *,
+					  struct neighbour *, void *),
+			       void *arg, bool down)
+{
+	struct rhashtable_iter hti;
+	struct rhashtable *nht;
+	struct neighbour *n;
+
+	nht = tbl->dev_table(dev, down);
+	if (!nht)
+		return;
+
+	rhashtable_walk_enter(nht, &hti);
+	rhashtable_walk_start(&hti);
+
+	while ((n = rhashtable_walk_next(&hti))) {
+		if (IS_ERR(n)) {
+			if (PTR_ERR(n) != -EAGAIN)
+				break;
+			continue;
+		}
+
+		cb(nht, n, arg);
+	}
+
+	rhashtable_walk_stop(&hti);
+	rhashtable_walk_exit(&hti);
+}
+
+static void __neigh_flush_dev(struct rhashtable *nht, struct neighbour *n,
+			      void *arg)
 {
 	bool *skip_perm = arg;
 
-	if (*skip_perm && n->nud_state & NUD_PERMANENT) {
-		np = &n->next;
+	if (*skip_perm && n->nud_state & NUD_PERMANENT)
 		return;
-	}
-	rcu_assign_pointer(*np,
-			   rcu_dereference_protected(n->next,
-						lockdep_is_held(&tbl->lock)));
+
+	rhashtable_remove_fast(nht, &n->ht_node, n->tbl->rht_params);
+
 	write_lock(&n->lock);
 	neigh_del_timer(n);
 	n->dead = 1;
@@ -274,40 +320,22 @@ static void __neigh_flush_dev(struct neigh_table *tbl, struct neighbour *n,
 static void neigh_flush_dev(struct neigh_table *tbl, struct net_device *dev,
 			    bool skip_perm)
 {
-	int i;
-	struct neigh_hash_table *nht;
-
-	nht = rcu_dereference_protected(tbl->nht,
-					lockdep_is_held(&tbl->lock));
-
-	for (i = 0; i < (1 << nht->hash_shift); i++) {
-		struct neighbour *n;
-		struct neighbour __rcu **np = &nht->hash_buckets[i];
-
-		while ((n = rcu_dereference_protected(*np,
-					lockdep_is_held(&tbl->lock))) != NULL) {
-			if (dev && n->dev != dev) {
-				np = &n->next;
-				continue;
-			}
-			__neigh_flush_dev(tbl, n, np, &skip_perm);
-		}
-	}
+	rcu_read_lock_bh();
+	neigh_dev_for_each(tbl, dev, __neigh_flush_dev, &skip_perm, !skip_perm);
+	rcu_read_unlock_bh();
 }
 
 void neigh_changeaddr(struct neigh_table *tbl, struct net_device *dev)
 {
-	write_lock_bh(&tbl->lock);
 	neigh_flush_dev(tbl, dev, false);
-	write_unlock_bh(&tbl->lock);
 }
 EXPORT_SYMBOL(neigh_changeaddr);
 
 static int __neigh_ifdown(struct neigh_table *tbl, struct net_device *dev,
 			  bool skip_perm)
 {
-	write_lock_bh(&tbl->lock);
 	neigh_flush_dev(tbl, dev, skip_perm);
+	write_lock_bh(&tbl->lock);
 	pneigh_ifdown_and_unlock(tbl, dev);
 
 	del_timer_sync(&tbl->proxy_timer);
@@ -482,13 +510,45 @@ struct neighbour *neigh_lookup(struct neigh_table *tbl, const void *pkey,
 }
 EXPORT_SYMBOL(neigh_lookup);
 
+static struct neighbour *__neigh_lookup_nodev(struct neigh_table *tbl,
+					      struct net_device *dev,
+					      const void *pkey)
+{
+	struct rhashtable_iter hti;
+	struct neighbour *n = NULL;
+	struct rhashtable *nht;
+
+	nht = tbl->dev_table(dev, 0);
+	if (!nht)
+		return n;
+
+	rhashtable_walk_enter(nht, &hti);
+	rhashtable_walk_start(&hti);
+
+	while ((n = rhashtable_walk_next(&hti))) {
+		if (IS_ERR(n)) {
+			if (PTR_ERR(n) != -EAGAIN)
+				break;
+			continue;
+		}
+		if (!memcmp(n->primary_key, pkey, tbl->key_len))
+			break;
+	}
+
+	rhashtable_walk_stop(&hti);
+	rhashtable_walk_exit(&hti);
+
+	return n;
+}
+
+/* decnet only */
 struct neighbour *neigh_lookup_nodev(struct neigh_table *tbl, struct net *net,
 				     const void *pkey)
 {
 	struct neighbour *n;
-	unsigned int key_len = tbl->key_len;
 	u32 hash_val;
 	struct neigh_hash_table *nht;
+	struct net_device *dev;
 
 	NEIGH_CACHE_STAT_INC(tbl, lookups);
 
@@ -496,11 +556,9 @@ struct neighbour *neigh_lookup_nodev(struct neigh_table *tbl, struct net *net,
 	nht = rcu_dereference_bh(tbl->nht);
 	hash_val = tbl->hash(pkey, NULL, nht->hash_rnd) >> (32 - nht->hash_shift);
 
-	for (n = rcu_dereference_bh(nht->hash_buckets[hash_val]);
-	     n != NULL;
-	     n = rcu_dereference_bh(n->next)) {
-		if (!memcmp(n->primary_key, pkey, key_len) &&
-		    net_eq(dev_net(n->dev), net)) {
+	for_each_netdev_rcu(net, dev) {
+		n = __neigh_lookup_nodev(tbl, dev, pkey);
+		if (n) {
 			if (!refcount_inc_not_zero(&n->refcnt))
 				n = NULL;
 			NEIGH_CACHE_STAT_INC(tbl, hits);
@@ -514,10 +572,11 @@ struct neighbour *neigh_lookup_nodev(struct neigh_table *tbl, struct net *net,
 EXPORT_SYMBOL(neigh_lookup_nodev);
 
 static int neigh_insert(struct neigh_table *tbl, struct net_device *dev,
-			struct neighbour *n, struct neighbour **rc, bool want_ref)
+			struct neighbour *n, struct neighbour **rc,
+			bool want_ref)
 {
 	struct neigh_hash_table *nht;
-	struct neighbour *n1;
+	struct rhashtable *rht;
 	u32 hash_val;
 	int err;
 
@@ -529,37 +588,32 @@ static int neigh_insert(struct neigh_table *tbl, struct net_device *dev,
 		nht = neigh_hash_grow(tbl, nht->hash_shift + 1);
 
 	hash_val = tbl->hash(n->primary_key, dev, nht->hash_rnd) >> (32 - nht->hash_shift);
+	write_unlock_bh(&tbl->lock);
 
-	if (n->parms->dead) {
-		err = -EINVAL;
-		goto out_tbl_unlock;
-	}
+	if (n->parms->dead)
+		return -EINVAL;
 
-	err = 0;
-	for (n1 = rcu_dereference_protected(nht->hash_buckets[hash_val],
-					    lockdep_is_held(&tbl->lock));
-	     n1 != NULL;
-	     n1 = rcu_dereference_protected(n1->next,
-			lockdep_is_held(&tbl->lock))) {
-		if (dev == n1->dev &&
-		    !memcmp(n1->primary_key, n->primary_key, tbl->key_len)) {
+	rht = tbl->dev_table(dev, 0);
+	if (!rht)
+		return -EINVAL;
+
+	err = rhashtable_lookup_insert_fast(rht, &n->ht_node, tbl->rht_params);
+	if (err == -EEXIST) {
+		struct neighbour *n1;
+
+		n1 = rhashtable_lookup(rht, n->primary_key, tbl->rht_params);
+		if (n1) {
 			if (want_ref)
 				neigh_hold(n1);
+
 			*rc = n1;
-			goto out_tbl_unlock;
+			err = 0;
 		}
+	} else if (err == 0) {
+		n->dead = 0;
+		if (want_ref)
+			neigh_hold(n);
 	}
-
-	n->dead = 0;
-	if (want_ref)
-		neigh_hold(n);
-	rcu_assign_pointer(n->next,
-			   rcu_dereference_protected(nht->hash_buckets[hash_val],
-						     lockdep_is_held(&tbl->lock)));
-	rcu_assign_pointer(nht->hash_buckets[hash_val], n);
-
-out_tbl_unlock:
-	write_unlock_bh(&tbl->lock);
 
 	return err;
 }
@@ -829,17 +883,16 @@ static void neigh_connect(struct neighbour *neigh)
 	neigh->output = neigh->ops->connected_output;
 }
 
-static int __neigh_periodic(struct neighbour *n, struct neighbour __rcu **np)
+static void neigh_periodic_dev(struct rhashtable *nht, struct neighbour *n,
+			       void *arg)
 {
 	unsigned int state;
-	int rc = 0;
 
 	write_lock(&n->lock);
 
 	state = n->nud_state;
 	if ((state & (NUD_PERMANENT | NUD_IN_TIMER)) ||
 	    (n->flags & NTF_EXT_LEARNED)) {
-		rc = 1;
 		goto out;
 	}
 
@@ -849,23 +902,21 @@ static int __neigh_periodic(struct neighbour *n, struct neighbour __rcu **np)
 	if (refcount_read(&n->refcnt) == 1 &&
 	    (state == NUD_FAILED ||
 	     time_after(jiffies, n->used + NEIGH_VAR(n->parms, GC_STALETIME)))) {
-		*np = n->next;
 		n->dead = 1;
 		write_unlock(&n->lock);
 		neigh_cleanup_and_release(n);
+		return;
 	}
+
 out:
 	write_unlock(&n->lock);
-	return rc;
 }
 
 static void neigh_periodic_work(struct work_struct *work)
 {
 	struct neigh_table *tbl = container_of(work, struct neigh_table, gc_work.work);
-	struct neighbour *n;
-	struct neighbour __rcu **np;
-	unsigned int i;
 	struct neigh_hash_table *nht;
+	struct net *net;
 
 	NEIGH_CACHE_STAT_INC(tbl, periodic_gc_runs);
 
@@ -885,30 +936,24 @@ static void neigh_periodic_work(struct work_struct *work)
 				neigh_rand_reach_time(NEIGH_VAR(p, BASE_REACHABLE_TIME));
 	}
 
+	write_unlock_bh(&tbl->lock);
+
 	if (atomic_read(&tbl->entries) < tbl->gc_thresh1)
 		goto out;
 
-	for (i = 0 ; i < (1 << nht->hash_shift); i++) {
-		np = &nht->hash_buckets[i];
+	rcu_read_lock_bh();
 
-		while ((n = rcu_dereference_protected(*np,
-				lockdep_is_held(&tbl->lock))) != NULL) {
+	for_each_net_rcu(net) {
+		struct net_device *dev;
 
-			if (__neigh_periodic(n, np))
-				continue;
-
-			np = &n->next;
+		for_each_netdev_rcu(net, dev) {
+			neigh_dev_for_each(tbl, dev, neigh_periodic_dev,
+					   NULL, 0);
 		}
-		/*
-		 * It's fine to release lock here, even if hash table
-		 * grows while we are preempted.
-		 */
-		write_unlock_bh(&tbl->lock);
-		cond_resched();
-		write_lock_bh(&tbl->lock);
-		nht = rcu_dereference_protected(tbl->nht,
-						lockdep_is_held(&tbl->lock));
 	}
+
+	rcu_read_unlock_bh();
+
 out:
 	/* Cycle through all hash buckets every BASE_REACHABLE_TIME/2 ticks.
 	 * ARP entry timeouts range from 1/2 BASE_REACHABLE_TIME to 3/2
@@ -916,7 +961,6 @@ out:
 	 */
 	queue_delayed_work(system_power_efficient_wq, &tbl->gc_work,
 			      NEIGH_VAR(&tbl->parms, BASE_REACHABLE_TIME) >> 1);
-	write_unlock_bh(&tbl->lock);
 }
 
 static __inline__ int neigh_max_probes(struct neighbour *n)
@@ -1658,7 +1702,6 @@ int neigh_table_clear(int index, struct neigh_table *tbl)
 	cancel_delayed_work_sync(&tbl->gc_work);
 	del_timer_sync(&tbl->proxy_timer);
 	pneigh_queue_purge(&tbl->proxy_queue);
-	neigh_ifdown(tbl, NULL);
 	if (atomic_read(&tbl->entries))
 		pr_crit("neighbour leakage\n");
 
@@ -1750,11 +1793,8 @@ static int neigh_delete(struct sk_buff *skb, struct nlmsghdr *nlh,
 			   NEIGH_UPDATE_F_OVERRIDE |
 			   NEIGH_UPDATE_F_ADMIN,
 			   NETLINK_CB(skb).portid);
-	write_lock_bh(&tbl->lock);
 	neigh_release(neigh);
 	neigh_remove_one(neigh, tbl);
-	write_unlock_bh(&tbl->lock);
-
 out:
 	return err;
 }
@@ -1944,6 +1984,12 @@ static int neightbl_fill_info(struct sk_buff *skb, struct neigh_table *tbl,
 			.ndtc_last_rand		= jiffies_to_msecs(rand_delta),
 			.ndtc_proxy_qlen	= tbl->proxy_queue.qlen,
 		};
+
+		rcu_read_lock_bh();
+		nht = rcu_dereference_bh(tbl->nht);
+		ndc.ndtc_hash_rnd = nht->hash_rnd[0];
+		ndc.ndtc_hash_mask = ((1 << nht->hash_shift) - 1);
+		rcu_read_unlock_bh();
 
 		rcu_read_lock_bh();
 		nht = rcu_dereference_bh(tbl->nht);
@@ -2419,51 +2465,100 @@ struct neigh_dump_filter {
 	int dev_idx;
 };
 
+static int neigh_dump_dev(struct neigh_table *tbl, struct net_device *dev,
+			  struct sk_buff *skb, struct netlink_callback *cb,
+			  unsigned int flags)
+{
+	int idx = 0, s_idx = cb->args[3];
+	struct rhashtable_iter hti;
+	struct rhashtable *nht;
+	struct neighbour *n;
+	int err = 0;
+
+	nht = tbl->dev_table(dev, 0);
+	if (!nht)
+		return 0;
+
+	rhashtable_walk_enter(nht, &hti);
+	rhashtable_walk_start(&hti);
+
+	while ((n = rhashtable_walk_next(&hti))) {
+		if (IS_ERR(n)) {
+			if (PTR_ERR(n) != -EAGAIN)
+				break;
+			continue;
+		}
+
+		if (idx < s_idx)
+			goto next;
+
+		err = neigh_fill_info(skb, n, NETLINK_CB(cb->skb).portid,
+				      cb->nlh->nlmsg_seq, RTM_NEWNEIGH, flags);
+		if (err)
+			goto out;
+next:
+		idx++;
+	}
+out:
+	rhashtable_walk_stop(&hti);
+	rhashtable_walk_exit(&hti);
+
+	cb->args[3] = idx;
+
+	return err < 0 ? err : skb->len;
+}
+
 static int neigh_dump_table(struct neigh_table *tbl, struct sk_buff *skb,
 			    struct netlink_callback *cb,
 			    struct neigh_dump_filter *filter)
 {
 	struct net *net = sock_net(skb->sk);
-	struct neighbour *n;
-	int rc, h, s_h = cb->args[1];
-	int idx, s_idx = idx = cb->args[2];
-	struct neigh_hash_table *nht;
 	unsigned int flags = NLM_F_MULTI;
+	struct net_device *dev;
+	int idx = 0, s_idx;
+	int err = 0;
+	int h, s_h;
 
 	if (filter->dev_idx || filter->master_idx)
 		flags |= NLM_F_DUMP_FILTERED;
 
-	rcu_read_lock_bh();
-	nht = rcu_dereference_bh(tbl->nht);
+	s_h = cb->args[1];
+	s_idx = cb->args[2];
 
-	for (h = s_h; h < (1 << nht->hash_shift); h++) {
-		if (h > s_h)
-			s_idx = 0;
-		for (n = rcu_dereference_bh(nht->hash_buckets[h]), idx = 0;
-		     n != NULL;
-		     n = rcu_dereference_bh(n->next)) {
-			if (idx < s_idx || !net_eq(dev_net(n->dev), net))
+	rcu_read_lock_bh();
+
+	if (filter->dev_idx) {
+		err = -ENODEV;
+		dev = dev_get_by_index_rcu(net, filter->dev_idx);
+		if (dev)
+			err = neigh_dump_dev(tbl, dev, skb, cb, flags);
+		goto out_unlock;
+	}
+
+	for (h = s_h; h < NETDEV_HASHENTRIES; h++, s_idx = 0) {
+		struct hlist_head *head;
+
+		idx = 0;
+		head = &net->dev_index_head[h];
+		hlist_for_each_entry_rcu(dev, head, index_hlist) {
+			if (idx < s_idx)
 				goto next;
-			if (neigh_ifindex_filtered(n->dev, filter->dev_idx) ||
-			    neigh_master_filtered(n->dev, filter->master_idx))
+			if (neigh_master_filtered(dev, filter->master_idx))
 				goto next;
-			if (neigh_fill_info(skb, n, NETLINK_CB(cb->skb).portid,
-					    cb->nlh->nlmsg_seq,
-					    RTM_NEWNEIGH,
-					    flags) < 0) {
-				rc = -1;
-				goto out;
-			}
+			err = neigh_dump_dev(tbl, dev, skb, cb, flags);
+			if (err < 0)
+				goto out_unlock;
 next:
 			idx++;
 		}
 	}
-	rc = skb->len;
-out:
+
+out_unlock:
 	rcu_read_unlock_bh();
+
 	cb->args[1] = h;
 	cb->args[2] = idx;
-	return rc;
+	return err < 0 ? err : skb->len;
 }
 
 static int pneigh_dump_table(struct neigh_table *tbl, struct sk_buff *skb,
@@ -2620,62 +2715,57 @@ static int neigh_dump_info(struct sk_buff *skb, struct netlink_callback *cb)
 	return skb->len;
 }
 
+/* decnet only */
 void neigh_for_each(struct neigh_table *tbl,
 		    void (*cb)(struct rhashtable *, struct neighbour *,
 			       void *), void *cookie)
 {
-	int chain;
-	struct neigh_hash_table *nht;
+	struct net *net;
 
 	rcu_read_lock_bh();
-	nht = rcu_dereference_bh(tbl->nht);
 
-	read_lock(&tbl->lock); /* avoid resizes */
-	for (chain = 0; chain < (1 << nht->hash_shift); chain++) {
-		struct neighbour *n;
+	for_each_net_rcu(net) {
+		struct net_device *dev;
 
-		for (n = rcu_dereference_bh(nht->hash_buckets[chain]);
-		     n != NULL;
-		     n = rcu_dereference_bh(n->next))
-			cb(NULL, n, cookie);
+		for_each_netdev_rcu(net, dev)
+			neigh_dev_for_each(tbl, dev, cb, cookie, 0);
 	}
-	read_unlock(&tbl->lock);
+
 	rcu_read_unlock_bh();
 }
 EXPORT_SYMBOL(neigh_for_each);
 
+static void ___neigh_for_each_release(struct rhashtable *nht,
+				      struct neighbour *n, void *arg)
+{
+	int (*cb)(struct neighbour *) = arg;
+	int release;
+
+	write_lock(&n->lock);
+	release = cb(n);
+	if (release) {
+		rhashtable_remove_fast(nht, &n->ht_node,
+				       n->tbl->rht_params);
+		n->dead = 1;
+	}
+	write_unlock(&n->lock);
+	if (release)
+		neigh_cleanup_and_release(n);
+}
+
 /* The tbl->lock must be held as a writer and BH disabled. */
+/* atm/clip only */
 void __neigh_for_each_release(struct neigh_table *tbl,
 			      int (*cb)(struct neighbour *))
 {
-	int chain;
-	struct neigh_hash_table *nht;
+	struct net_device *dev;
 
-	nht = rcu_dereference_protected(tbl->nht,
-					lockdep_is_held(&tbl->lock));
-	for (chain = 0; chain < (1 << nht->hash_shift); chain++) {
-		struct neighbour *n;
-		struct neighbour __rcu **np;
+	rcu_read_lock_bh();
 
-		np = &nht->hash_buckets[chain];
-		while ((n = rcu_dereference_protected(*np,
-					lockdep_is_held(&tbl->lock))) != NULL) {
-			int release;
+	for_each_netdev_rcu(&init_net, dev)
+		neigh_dev_for_each(tbl, dev, ___neigh_for_each_release, cb, 0);
 
-			write_lock(&n->lock);
-			release = cb(n);
-			if (release) {
-				rcu_assign_pointer(*np,
-					rcu_dereference_protected(n->next,
-						lockdep_is_held(&tbl->lock)));
-				n->dead = 1;
-			} else
-				np = &n->next;
-			write_unlock(&n->lock);
-			if (release)
-				neigh_cleanup_and_release(n);
-		}
-	}
+	rcu_read_unlock_bh();
 }
 EXPORT_SYMBOL(__neigh_for_each_release);
 

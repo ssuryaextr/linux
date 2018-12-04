@@ -279,17 +279,17 @@ static inline struct neighbour *__neigh_lookup_noref(struct neigh_table *tbl,
 						     struct net_device *dev)
 {
 	struct neigh_hash_table *nht = rcu_dereference_bh(tbl->nht);
-	struct neighbour *n;
+	struct rhashtable *rht = tbl->dev_table(dev, 0);
 	u32 hash_val;
 
 	hash_val = tbl->hash(pkey, dev, nht->hash_rnd) >> (32 - nht->hash_shift);
-	for (n = rcu_dereference_bh(nht->hash_buckets[hash_val]);
-	     n != NULL;
-	     n = rcu_dereference_bh(n->next)) {
-		if (n->dev == dev && tbl->key_eq(n, pkey))
-			return n;
-	}
 
+	if (likely(rht)) {
+		struct neighbour *n;
+
+		n = rhashtable_lookup_bh(rht, pkey, tbl->rht_params);
+		return n;
+	}
 	return NULL;
 }
 
