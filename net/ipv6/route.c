@@ -639,33 +639,19 @@ static int rt6_score_route(struct fib6_info *rt, int oif, int strict)
 	return m;
 }
 
-/* called with rc_read_lock held */
-static inline bool fib6_ignore_linkdown(const struct fib6_info *f6i)
-{
-	const struct net_device *dev = fib6_info_nh_dev(f6i);
-	bool rc = false;
-
-	if (dev) {
-		const struct inet6_dev *idev = __in6_dev_get(dev);
-
-		rc = !!idev->cnf.ignore_routes_with_linkdown;
-	}
-
-	return rc;
-}
-
 static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
 				   int *mpri, struct fib6_info *match,
 				   bool *do_rr)
 {
+	const struct fib6_nh *fib6_nh = rt->fib6_nh;
 	int m;
 	bool match_do_rr = false;
 
-	if (rt->fib6_nh->nh_flags & RTNH_F_DEAD)
+	if (fib6_nh->nh_flags & RTNH_F_DEAD)
 		goto out;
 
-	if (fib6_ignore_linkdown(rt) &&
-	    rt->fib6_nh->nh_flags & RTNH_F_LINKDOWN &&
+	if (ip6_ignore_linkdown(fib6_nh->nh_dev) &&
+	    fib6_nh->nh_flags & RTNH_F_LINKDOWN &&
 	    !(strict & RT6_LOOKUP_F_IGNORE_LINKSTATE))
 		goto out;
 
@@ -3852,9 +3838,11 @@ static struct fib6_info *rt6_multipath_first_sibling(const struct fib6_info *rt)
 
 static bool rt6_is_dead(const struct fib6_info *rt)
 {
-	if (rt->fib6_nh->nh_flags & RTNH_F_DEAD ||
-	    (rt->fib6_nh->nh_flags & RTNH_F_LINKDOWN &&
-	     fib6_ignore_linkdown(rt)))
+	const struct fib6_nh *fib6_nh = rt->fib6_nh;
+
+	if (fib6_nh->nh_flags & RTNH_F_DEAD ||
+	    (fib6_nh->nh_flags & RTNH_F_LINKDOWN &&
+	     ip6_ignore_linkdown(fib6_nh->nh_dev)))
 		return true;
 
 	return false;
@@ -4588,7 +4576,7 @@ static int rt6_nexthop_info(struct sk_buff *skb, struct fib6_info *rt,
 		*flags |= RTNH_F_LINKDOWN;
 
 		rcu_read_lock();
-		if (fib6_ignore_linkdown(rt))
+		if (ip6_ignore_linkdown(rt->fib6_nh->nh_dev))
 			*flags |= RTNH_F_DEAD;
 		rcu_read_unlock();
 	}
