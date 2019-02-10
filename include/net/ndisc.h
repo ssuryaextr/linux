@@ -2,6 +2,8 @@
 #ifndef _NDISC_H
 #define _NDISC_H
 
+#include <net/ipv6_stubs.h>
+
 /*
  *	ICMP codes for neighbour discovery messages
  */
@@ -374,6 +376,14 @@ static inline u32 ndisc_hashfn(const void *pkey, const struct net_device *dev, _
 		(p32[3] * hash_rnd[3]));
 }
 
+static inline
+struct neighbour *__ipv6_neigh_lookup_noref_stub(struct net_device *dev,
+						 const void *pkey)
+{
+	return ___neigh_lookup_noref(ipv6_stub->nd_tbl, neigh_key_eq128,
+				     ndisc_hashfn, pkey, dev);
+}
+
 static inline struct neighbour *__ipv6_neigh_lookup_noref(struct net_device *dev, const void *pkey)
 {
 	return ___neigh_lookup_noref(&nd_tbl, neigh_key_eq128, ndisc_hashfn, pkey, dev);
@@ -407,6 +417,36 @@ static inline void __ipv6_confirm_neigh(struct net_device *dev,
 			n->confirmed = now;
 	}
 	rcu_read_unlock_bh();
+}
+
+static inline void __ipv6_confirm_neigh_stub(struct net_device *dev,
+					     const void *pkey)
+{
+	struct neighbour *n;
+
+	rcu_read_lock_bh();
+	n = __ipv6_neigh_lookup_noref_stub(dev, pkey);
+	if (n) {
+		unsigned long now = jiffies;
+
+		/* avoid dirtying neighbour */
+		if (n->confirmed != now)
+			n->confirmed = now;
+	}
+	rcu_read_unlock_bh();
+}
+
+/* uses ipv6_stub and is meant for use outside of IPv6 core */
+static inline struct neighbour *ip_neigh_gw6(struct net_device *dev,
+					     const void *addr)
+{
+	struct neighbour *neigh;
+
+	neigh = __ipv6_neigh_lookup_noref_stub(dev, addr);
+	if (unlikely(!neigh))
+		neigh = __neigh_create(ipv6_stub->nd_tbl, addr, dev, false);
+
+	return neigh;
 }
 
 int ndisc_init(void);
