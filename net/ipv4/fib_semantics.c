@@ -1529,7 +1529,8 @@ int fib_nexthop_info(struct sk_buff *skb, const struct fib_nh_common *nh,
 		goto nla_put_failure;
 
 	if (nh->nhc_lwtstate &&
-	    lwtunnel_fill_encap(skb, nh->nhc_lwtstate) < 0)
+	    lwtunnel_fill_encap(skb, nh->nhc_lwtstate,
+				RTA_ENCAP, RTA_ENCAP_TYPE) < 0)
 		goto nla_put_failure;
 
 	return 0;
