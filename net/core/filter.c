@@ -4483,9 +4483,9 @@ static int bpf_fib_set_fwd_params(struct bpf_fib_lookup *params,
 static int bpf_ipv4_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 			       u32 flags, bool check_mtu)
 {
+	struct neighbour *neigh = NULL;
 	struct fib_nh_common *nhc;
 	struct in_device *in_dev;
-	struct neighbour *neigh;
 	struct net_device *dev;
 	struct fib_result res;
 	struct flowi4 fl4;
@@ -4566,16 +4566,24 @@ static int bpf_ipv4_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 	if (nhc->nhc_lwtstate)
 		return BPF_FIB_LKUP_RET_UNSUPP_LWT;
 
-	dev = nhc->nhc_dev;
-	if (nhc->nhc_has_gw)
-		params->ipv4_dst = nhc->nhc_gw.ipv4;
-
 	params->rt_metric = res.fi->fib_priority;
+	dev = nhc->nhc_dev;
 
 	/* xdp and cls_bpf programs are run in RCU-bh so
 	 * rcu_read_lock_bh is not needed here
 	 */
-	neigh = __ipv4_neigh_lookup_noref(dev, (__force u32)params->ipv4_dst);
+	if (likely(nhc->nhc_family == AF_INET)) {
+		params->ipv4_dst = nhc->nhc_gw.ipv4;
+		params->family = AF_INET;
+		neigh = __ipv4_neigh_lookup_noref(dev,
+						 (__force u32)params->ipv4_dst);
+	} else if (nhc->nhc_family == AF_INET6) {
+		struct in6_addr *dst = (struct in6_addr *) params->ipv6_dst;
+
+		params->family = AF_INET6;
+		*dst = nhc->nhc_gw.ipv6;
+		neigh = __ipv6_neigh_lookup_noref_stub(dev, dst);
+	}
 	if (!neigh)
 		return BPF_FIB_LKUP_RET_NO_NEIGH;
 
