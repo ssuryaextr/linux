@@ -145,6 +145,7 @@ struct fib_info {
 	__be32			fib_prefsrc;
 	u32			fib_tb_id;
 	u32			fib_priority;
+	bool			nh_updated;
 	struct dst_metrics	*fib_metrics;
 #define fib_mtu fib_metrics->metrics[RTAX_MTU-1]
 #define fib_window fib_metrics->metrics[RTAX_WINDOW-1]
@@ -241,6 +242,7 @@ int call_fib4_notifiers(struct net *net, enum fib_event_type event_type,
 int __net_init fib4_notifier_init(struct net *net);
 void __net_exit fib4_notifier_exit(struct net *net);
 
+void fib_info_notify_update(struct net *net, struct nl_info *info);
 void fib_notify(struct net *net, struct notifier_block *nb);
 
 struct fib_table {
