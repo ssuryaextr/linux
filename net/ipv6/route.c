@@ -4614,73 +4614,6 @@ static size_t rt6_nlmsg_size(struct fib6_info *rt)
 	       + nexthop_len;
 }
 
-static int rt6_nexthop_info(struct sk_buff *skb, const struct fib6_nh *nh,
-			    unsigned int *flags, bool skip_oif)
-{
-	if (nh->fib_nh_flags & RTNH_F_DEAD)
-		*flags |= RTNH_F_DEAD;
-
-	if (nh->fib_nh_flags & RTNH_F_LINKDOWN) {
-		*flags |= RTNH_F_LINKDOWN;
-
-		rcu_read_lock();
-		if (ip6_ignore_linkdown(nh->fib_nh_dev))
-			*flags |= RTNH_F_DEAD;
-		rcu_read_unlock();
-	}
-
-	if (nh->fib_nh_has_gw) {
-		if (nla_put_in6_addr(skb, RTA_GATEWAY, &nh->fib_nh_gw6) < 0)
-			goto nla_put_failure;
-	}
-
-	*flags |= (nh->fib_nh_flags & RTNH_F_ONLINK);
-	if (nh->fib_nh_flags & RTNH_F_OFFLOAD)
-		*flags |= RTNH_F_OFFLOAD;
-
-	/* not needed for multipath encoding b/c it has a rtnexthop struct */
-	if (!skip_oif && nh->fib_nh_dev &&
-	    nla_put_u32(skb, RTA_OIF, nh->fib_nh_dev->ifindex))
-		goto nla_put_failure;
-
-	if (nh->fib_nh_lws &&
-	    lwtunnel_fill_encap(skb, nh->fib_nh_lws) < 0)
-		goto nla_put_failure;
-
-	return 0;
-
-nla_put_failure:
-	return -EMSGSIZE;
-}
-
-/* add multipath next hop */
-static int rt6_add_nexthop(struct sk_buff *skb, const struct fib6_nh *nh)
-{
-	const struct net_device *dev = nh->fib_nh_dev;
-	struct rtnexthop *rtnh;
-	unsigned int flags = 0;
-
-	rtnh = nla_reserve_nohdr(skb, sizeof(*rtnh));
-	if (!rtnh)
-		goto nla_put_failure;
-
-	rtnh->rtnh_hops = nh->fib_nh_weight - 1;
-	rtnh->rtnh_ifindex = dev ? dev->ifindex : 0;
-
-	if (rt6_nexthop_info(skb, nh, &flags, true) < 0)
-		goto nla_put_failure;
-
-	rtnh->rtnh_flags = flags;
-
-	/* length of rtnetlink header + attributes */
-	rtnh->rtnh_len = nlmsg_get_pos(skb) - (void *)rtnh;
-
-	return 0;
-
-nla_put_failure:
-	return -EMSGSIZE;
-}
-
 static int rt6_fill_node(struct net *net, struct sk_buff *skb,
 			 struct fib6_info *rt, struct dst_entry *dst,
 			 struct in6_addr *dest, struct in6_addr *src,
@@ -4797,19 +4730,22 @@ static int rt6_fill_node(struct net *net, struct sk_buff *skb,
 		if (!mp)
 			goto nla_put_failure;
 
-		if (rt6_add_nexthop(skb, rt->fib6_nh) < 0)
+		if (fib_add_nexthop(skb, &rt->fib6_nh->nh_common,
+				    rt->fib6_nh->fib_nh_weight, false) < 0)
 			goto nla_put_failure;
 
 		list_for_each_entry_safe(sibling, next_sibling,
 					 &rt->fib6_siblings, fib6_siblings) {
-			if (rt6_add_nexthop(skb, sibling->fib6_nh) < 0)
+			if (fib_add_nexthop(skb, &sibling->fib6_nh->nh_common,
+					    sibling->fib6_nh->fib_nh_weight,
+					    false) < 0)
 				goto nla_put_failure;
 		}
 
 		nla_nest_end(skb, mp);
 	} else {
-		if (rt6_nexthop_info(skb, rt->fib6_nh, &rtm->rtm_flags,
-				     false) < 0)
+		if (fib_nexthop_info(skb, &rt->fib6_nh->nh_common,
+				     &rtm->rtm_flags, false, false) < 0)
 			goto nla_put_failure;
 	}
 

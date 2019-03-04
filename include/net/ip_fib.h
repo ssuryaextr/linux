@@ -504,4 +504,9 @@ u32 ip_mtu_from_fib_result(struct fib_result *res, __be32 daddr);
 int ip_valid_fib_dump_req(struct net *net, const struct nlmsghdr *nlh,
 			  struct fib_dump_filter *filter,
 			  struct netlink_callback *cb);
+
+int fib_nexthop_info(struct sk_buff *skb, const struct fib_nh_common *nh,
+		     unsigned int *flags, bool skip_oif, bool for_ipv4);
+int fib_add_nexthop(struct sk_buff *skb, const struct fib_nh_common *nh,
+		    int nh_weight, bool for_ipv4);
 #endif  /* _NET_FIB_H */
