@@ -470,6 +470,12 @@ struct lwtunnel_state *fib6_info_nh_lwt(struct fib6_info *f6i)
 	return nh->fib_nh_lws;
 }
 
+int call_fib6_entry_notifiers(struct net *net,
+			      enum fib_event_type event_type,
+			      struct fib6_info *rt,
+			      struct netlink_ext_ack *extack);
+void fib6_rt_update(struct net *net, struct fib6_info *rt,
+		    struct nl_info *info);
 void inet6_rt_notify(int event, struct fib6_info *rt, struct nl_info *info,
 		     unsigned int flags);
 
