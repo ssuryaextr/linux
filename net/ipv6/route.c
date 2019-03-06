@@ -2451,6 +2451,35 @@ void ip6_sk_dst_store_flow(struct sock *sk, struct dst_entry *dst,
 		      NULL);
 }
 
+static bool ip6_redirect_nh_match(struct fib6_info *f6i,
+				  struct fib6_nh *nh,
+				  struct flowi6 *fl6,
+				  const struct in6_addr *gw,
+				  struct rt6_info **ret)
+{
+	if (nh->fib_nh_flags & RTNH_F_DEAD || !nh->fib_nh_has_gw ||
+	    fl6->flowi6_oif != nh->fib_nh_dev->ifindex)
+		return false;
+
+	/* rt_cache's gateway might be different from its 'parent'
+	 * in the case of an ip redirect.
+	 * So we keep searching in the exception table if the gateway
+	 * is different.
+	 */
+	if (!ipv6_addr_equal(gw, &nh->fib_nh_gw6)) {
+		struct rt6_info *rt_cache;
+
+		rt_cache = rt6_find_cached_rt(f6i, &fl6->daddr, &fl6->saddr);
+		if (rt_cache &&
+		    ipv6_addr_equal(gw, &rt_cache->rt6i_gateway)) {
+			*ret = rt_cache;
+			return true;
+		}
+		return false;
+	}
+	return true;
+}
+
 /* Handle redirects */
 struct ip6rd_flowi {
 	struct flowi6 fl6;
@@ -2464,7 +2493,7 @@ static struct rt6_info *__ip6_route_redirect(struct net *net,
 					     int flags)
 {
 	struct ip6rd_flowi *rdfl = (struct ip6rd_flowi *)fl6;
-	struct rt6_info *ret = NULL, *rt_cache;
+	struct rt6_info *ret = NULL;
 	struct fib6_info *rt;
 	struct fib6_node *fn;
 
@@ -2484,34 +2513,12 @@ restart:
 	for_each_fib6_node_rt_rcu(fn) {
 		struct fib6_nh *nh = fib6_info_nh(rt);
 
-		if (nh->fib_nh_flags & RTNH_F_DEAD)
-			continue;
 		if (fib6_check_expired(rt))
 			continue;
 		if (rt->fib6_flags & RTF_REJECT)
 			break;
-		if (!nh->fib_nh_has_gw)
-			continue;
-		if (fl6->flowi6_oif != nh->fib_nh_dev->ifindex)
-			continue;
-		/* rt_cache's gateway might be different from its 'parent'
-		 * in the case of an ip redirect.
-		 * So we keep searching in the exception table if the gateway
-		 * is different.
-		 */
-		if (!ipv6_addr_equal(&rdfl->gateway, &nh->fib_nh_gw6)) {
-			rt_cache = rt6_find_cached_rt(rt,
-						      &fl6->daddr,
-						      &fl6->saddr);
-			if (rt_cache &&
-			    ipv6_addr_equal(&rdfl->gateway,
-					    &rt_cache->rt6i_gateway)) {
-				ret = rt_cache;
-				break;
-			}
-			continue;
-		}
-		break;
+		if (ip6_redirect_nh_match(rt, nh, fl6, &rdfl->gateway, &ret))
+			goto out;
 	}
 
 	if (!rt)
