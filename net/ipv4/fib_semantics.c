@@ -433,6 +433,9 @@ static inline size_t fib_nlmsg_size(struct fib_info *fi)
 	/* space for nested metrics */
 	payload += nla_total_size((RTAX_MAX * nla_total_size(4)));
 
+	if (fi->nh)
+		payload += nla_total_size(4); /* RTA_NH_ID */
+
 	if (nhs) {
 		size_t nh_encapsize = 0;
 		/* Also handles the special case fib_nhs == 1 */
@@ -792,6 +795,9 @@ int fib_nh_match(struct fib_config *cfg, struct fib_info *fi,
 
 	if (cfg->fc_priority && cfg->fc_priority != fi->fib_priority)
 		return 1;
+
+	if (fi->nh)
+		return cfg->fc_nh_id == fi->nh->id ? 0 : 1;
 
 	if (cfg->fc_oif || cfg->fc_gw_family) {
 		struct fib_nh *nh = fib_info_nh(fi, 0);
@@ -1308,6 +1314,14 @@ struct fib_info *fib_create_info(struct fib_config *cfg,
 		goto err_inval;
 	}
 
+	if (cfg->fc_nh_id) {
+		nh = nexthop_find_by_id(net, cfg->fc_nh_id);
+		if (!nh) {
+			NL_SET_ERR_MSG(extack, "Nexthop id does not exist");
+			goto err_inval;
+		}
+	}
+
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
 	if (cfg->fc_mp) {
 		nhs = fib_count_nexthops(cfg->fc_mp, cfg->fc_mp_len, extack);
@@ -1701,6 +1715,13 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 	if (fi->fib_prefsrc &&
 	    nla_put_in_addr(skb, RTA_PREFSRC, fi->fib_prefsrc))
 		goto nla_put_failure;
+
+	if (fi->nh) {
+		if (nla_put_u32(skb, RTA_NH_ID, fi->nh->id))
+			goto nla_put_failure;
+		if (nexthop_is_blackhole(fi->nh))
+			rtm->rtm_type = RTN_BLACKHOLE;
+	}
 	if (nhs == 1) {
 		const struct fib_nh_common *nhc = fib_info_nhc(fi, 0);
 		unsigned int flags = 0;
