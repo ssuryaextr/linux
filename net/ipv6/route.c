@@ -500,34 +500,33 @@ static void rt6_device_match(struct net *net, struct fib6_result *res,
 
 	if (!oif && ipv6_addr_any(saddr)) {
 		nh = fib6_info_nh(rt);
-		if (!(nh->fib_nh_flags & RTNH_F_DEAD)) {
-			res->nh = nh;
-			return;
-		}
+		if (!(nh->fib_nh_flags & RTNH_F_DEAD))
+			goto out;
 	}
 
 	for (sprt = rt; sprt; sprt = rcu_dereference(sprt->fib6_next)) {
 		nh = fib6_info_nh(sprt);
 		if (__rt6_device_match(net, nh, saddr, oif, flags)) {
 			res->f6i = sprt;
-			res->nh = nh;
-			return;
+			goto out;
 		}
 	}
 
 	if (oif && flags & RT6_LOOKUP_F_IFACE) {
 		res->f6i = net->ipv6.fib6_null_entry;
-		res->nh = fib6_info_nh(res->f6i);
-		return;
+		nh = fib6_info_nh(res->f6i);
+		goto out;
 	}
 
 	nh = fib6_info_nh(rt);
 	if (nh->fib_nh_flags & RTNH_F_DEAD) {
 		res->f6i = net->ipv6.fib6_null_entry;
-		res->nh = fib6_info_nh(res->f6i);
-	} else {
-		res->nh = nh;
+		nh = fib6_info_nh(res->f6i);
 	}
+out:
+	res->nh = nh;
+	res->fib6_type = res->f6i->fib6_type;
+	res->fib6_flags = res->f6i->fib6_flags;
 }
 
 #ifdef CONFIG_IPV6_ROUTER_PREF
@@ -721,6 +720,8 @@ static void __find_rr_leaf(struct fib6_info *rt_start,
 		if (find_match(nh, rt->fib6_flags, oif, strict, mpri, do_rr)) {
 			res->f6i = rt;
 			res->nh = nh;
+			res->fib6_flags = rt->fib6_flags;
+			res->fib6_type = rt->fib6_type;
 		}
 	}
 }
@@ -798,7 +799,9 @@ static void rt6_select(struct net *net, struct fib6_node *fn, int oif,
 out:
 	if (!res->f6i) {
 		res->f6i = net->ipv6.fib6_null_entry;
-		res->nh = NULL;
+		res->nh = fib6_info_nh(res->f6i);
+		res->fib6_flags = res->f6i->fib6_flags;
+		res->fib6_type = res->f6i->fib6_type;
 	}
 }
 
@@ -891,15 +894,14 @@ int rt6_route_rcv(struct net_device *dev, u8 *opt, int len,
 static struct net_device *ip6_rt_get_dev_rcu(struct fib6_result *res)
 {
 	struct net_device *dev = res->nh->fib_nh_dev;
-	struct fib6_info *rt = res->f6i;
 
-	if (rt->fib6_flags & (RTF_LOCAL | RTF_ANYCAST)) {
+	if (res->fib6_flags & (RTF_LOCAL | RTF_ANYCAST)) {
 		/* for copies of local routes, dst->dev needs to be the
 		 * device if it is a master device, the master device if
 		 * device is enslaved, and the loopback as the default
 		 */
 		if (netif_is_l3_slave(dev) &&
-		    !rt6_need_strict(&rt->fib6_dst.addr))
+		    !rt6_need_strict(&res->f6i->fib6_dst.addr))
 			dev = l3mdev_master_dev_rcu(dev);
 		else if (!netif_is_l3_master(dev))
 			dev = dev_net(dev)->loopback_dev;
@@ -945,11 +947,11 @@ static unsigned short fib6_info_dst_flags(struct fib6_info *rt)
 	return flags;
 }
 
-static void ip6_rt_init_dst_reject(struct rt6_info *rt, struct fib6_info *ort)
+static void ip6_rt_init_dst_reject(struct rt6_info *rt, u8 fib6_type)
 {
-	rt->dst.error = ip6_rt_type_to_error(ort->fib6_type);
+	rt->dst.error = ip6_rt_type_to_error(fib6_type);
 
-	switch (ort->fib6_type) {
+	switch (fib6_type) {
 	case RTN_BLACKHOLE:
 		rt->dst.output = dst_discard_out;
 		rt->dst.input = dst_discard;
@@ -967,19 +969,22 @@ static void ip6_rt_init_dst_reject(struct rt6_info *rt, struct fib6_info *ort)
 	}
 }
 
-static void ip6_rt_init_dst(struct rt6_info *rt, struct fib6_info *ort)
+static void ip6_rt_init_dst(struct rt6_info *rt, struct fib6_result *res)
 {
+	struct fib6_info *ort = res->f6i;
 	struct lwtunnel_state *lws;
 
-	if (ort->fib6_flags & RTF_REJECT) {
-		ip6_rt_init_dst_reject(rt, ort);
+	WARN_ON(!res->fib6_type);
+
+	if (res->fib6_flags & RTF_REJECT) {
+		ip6_rt_init_dst_reject(rt, res->fib6_type);
 		return;
 	}
 
 	rt->dst.error = 0;
 	rt->dst.output = ip6_output;
 
-	if (ort->fib6_type == RTN_LOCAL || ort->fib6_type == RTN_ANYCAST) {
+	if (res->fib6_type == RTN_LOCAL || res->fib6_type == RTN_ANYCAST) {
 		rt->dst.input = ip6_input;
 	} else if (ipv6_addr_type(&ort->fib6_dst.addr) & IPV6_ADDR_MULTICAST) {
 		rt->dst.input = ip6_mc_input;
@@ -987,7 +992,7 @@ static void ip6_rt_init_dst(struct rt6_info *rt, struct fib6_info *ort)
 		rt->dst.input = ip6_forward;
 	}
 
-	lws = fib6_info_nh_lwt(ort);
+	lws = res->nh->fib_nh_lws;
 	if (lws) {
 		rt->dst.lwtstate = lwtstate_get(lws);
 		lwtunnel_set_redirect(&rt->dst);
@@ -1011,11 +1016,11 @@ static void ip6_rt_copy_init(struct rt6_info *rt, struct fib6_result *res)
 	struct net_device *dev = nh->fib_nh_dev;
 	struct fib6_info *ort = res->f6i;
 
-	ip6_rt_init_dst(rt, ort);
+	ip6_rt_init_dst(rt, res);
 
 	rt->rt6i_dst = ort->fib6_dst;
 	rt->rt6i_idev = dev ? in6_dev_get(dev) : NULL;
-	rt->rt6i_flags = ort->fib6_flags;
+	rt->rt6i_flags = res->fib6_flags;
 	if (nh->fib_nh_has_gw) {
 		rt->rt6i_gateway = nh->fib_nh_gw6;
 		rt->rt6i_flags |= RTF_GATEWAY;
@@ -2398,6 +2403,9 @@ static void __ip6_rt_update_pmtu(struct dst_entry *dst, const struct sock *sk,
 		rcu_read_lock();
 		res.f6i = rcu_dereference(rt6->from);
 		res.nh = fib6_info_nh(res.f6i);
+		res.fib6_flags = res.f6i->fib6_flags;
+		res.fib6_type = res.f6i->fib6_type;
+
 		nrt6 = ip6_rt_cache_alloc(&res, daddr, saddr);
 		if (nrt6) {
 			rt6_do_update_pmtu(nrt6, mtu);
@@ -2563,10 +2571,13 @@ restart:
 	res.f6i = rt;
 	res.nh = fib6_info_nh(rt);
 out:
-	if (ret)
+	if (ret) {
 		ip6_hold_safe(net, &ret);
-	else
+	} else {
+		res.fib6_flags = res.f6i->fib6_flags;
+		res.fib6_type = res.f6i->fib6_type;
 		ret = ip6_create_rt_rcu(&res);
+	}
 
 	rcu_read_unlock();
 
@@ -3517,6 +3528,8 @@ static void rt6_do_redirect(struct dst_entry *dst, struct sock *sk, struct sk_bu
 	rcu_read_unlock();
 
 	res.nh = fib6_info_nh(res.f6i);
+	res.fib6_flags = res.f6i->fib6_flags;
+	res.fib6_type = res.f6i->fib6_type;
 	nrt = ip6_rt_cache_alloc(&res, &msg->dest, NULL);
 	if (!nrt)
 		goto out;

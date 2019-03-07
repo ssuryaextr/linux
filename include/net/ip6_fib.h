@@ -189,6 +189,8 @@ struct rt6_info {
 };
 
 struct fib6_result {
+	u32			fib6_flags;
+	u8			fib6_type;
 	struct fib6_nh		*nh;
 	struct fib6_info	*f6i;
 };
