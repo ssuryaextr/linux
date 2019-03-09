@@ -145,7 +145,10 @@ struct fib6_info {
 	 * destination, but not the same gateway. nsiblings is just a cache
 	 * to speed up lookup.
 	 */
-	struct list_head		fib6_siblings;
+	union {
+		struct list_head	nh_list;
+		struct list_head	fib6_siblings;
+	};
 	unsigned int			fib6_nsiblings;
 
 	atomic_t			fib6_ref;
@@ -168,6 +171,7 @@ struct fib6_info {
 					unused:4;
 
 	struct rcu_head			rcu;
+	struct nexthop			*nh;
 	struct fib6_nh			fib6_nh[0];
 };
 

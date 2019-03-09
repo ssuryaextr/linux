@@ -70,7 +70,7 @@ static inline bool rt6_need_strict(const struct in6_addr *daddr)
 
 static inline bool rt6_qualify_for_ecmp(struct fib6_info *f6i)
 {
-	return !(f6i->fib6_flags & (RTF_ADDRCONF|RTF_DYNAMIC)) &&
+	return !(f6i->fib6_flags & (RTF_ADDRCONF|RTF_DYNAMIC)) && !f6i->nh &&
 		f6i->fib6_nh->fib_nh_has_gw;
 }
 
@@ -276,9 +276,13 @@ static inline struct in6_addr *rt6_nexthop(struct rt6_info *rt,
 
 static inline bool rt6_duplicate_nexthop(struct fib6_info *a, struct fib6_info *b)
 {
-	struct fib6_nh *nha = fib6_info_nh(a);
-	struct fib6_nh *nhb = fib6_info_nh(b);
+	struct fib6_nh *nha, *nhb;
 
+	if (a->nh || b->nh)
+		return nexthop_cmp(a->nh, b->nh);
+
+	nha = fib6_info_nh(a);
+	nhb = fib6_info_nh(b);
 	return nha->fib_nh_dev == nhb->fib_nh_dev &&
 	       ipv6_addr_equal(&nha->fib_nh_gw6, &nhb->fib_nh_gw6) &&
 	       !lwtunnel_cmp_encap(nha->fib_nh_lws, nhb->fib_nh_lws);

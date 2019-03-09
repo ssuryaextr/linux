@@ -159,6 +159,7 @@ struct fib6_info *fib6_info_alloc(gfp_t gfp_flags, bool with_fib6_nh)
 	if (!f6i)
 		return NULL;
 
+	/* fib6_siblings is a union with nh_list, so this initializes both */
 	INIT_LIST_HEAD(&f6i->fib6_siblings);
 	atomic_inc(&f6i->fib6_ref);
 
@@ -171,7 +172,10 @@ void fib6_info_destroy_rcu(struct rcu_head *head)
 
 	WARN_ON(f6i->fib6_node);
 
-	fib6_nh_release(f6i->fib6_nh);
+	if (f6i->nh)
+		nexthop_put(f6i->nh);
+	else
+		fib6_nh_release(f6i->fib6_nh);
 
 	ip_fib_metrics_put(f6i->fib6_metrics);
 
@@ -904,19 +908,44 @@ static void __fib6_drop_pcpu_from(struct fib6_nh *fib6_nh,
 	}
 }
 
+struct fib6_nh_pcpu_arg {
+	struct fib6_info	*from;
+	const struct fib6_table	*table;
+};
+
+static int fib6_nh_drop_pcpu_from(struct fib6_nh *nh, void *_arg)
+{
+	struct fib6_nh_pcpu_arg *arg = _arg;
+
+	__fib6_drop_pcpu_from(nh, arg->from, arg->table);
+	return 0;
+}
+
 static void fib6_drop_pcpu_from(struct fib6_info *f6i,
 				const struct fib6_table *table)
 {
-	struct fib6_nh *fib6_nh;
+	if (f6i->nh) {
+		struct fib6_nh_pcpu_arg arg = {
+			.from = f6i,
+			.table = table
+		};
+		nexthop_for_each_fib6_nh(f6i->nh, fib6_nh_drop_pcpu_from,
+					 &arg);
+	} else {
+		struct fib6_nh *fib6_nh;
 
-	fib6_nh = fib6_info_nh(f6i);
-	__fib6_drop_pcpu_from(fib6_nh, f6i, table);
+		fib6_nh = fib6_info_nh(f6i);
+		__fib6_drop_pcpu_from(fib6_nh, f6i, table);
+	}
 }
 
 static void fib6_purge_rt(struct fib6_info *rt, struct fib6_node *fn,
 			  struct net *net)
 {
 	struct fib6_table *table = rt->fib6_table;
+
+	if (rt->nh && !list_empty(&rt->nh_list))
+		list_del_init(&rt->nh_list);
 
 	if (atomic_read(&rt->fib6_ref) != 1) {
 		/* This route is used as dummy address holder in some split
@@ -1328,6 +1357,8 @@ int fib6_add(struct fib6_node *root, struct fib6_info *rt,
 
 	err = fib6_add_rt2node(fn, rt, info, extack);
 	if (!err) {
+		if (rt->nh)
+			list_add(&rt->nh_list, &rt->nh->f6i_list);
 		__fib6_update_sernum_upto_root(rt, sernum);
 		fib6_start_gc(info->nl_net, rt);
 	}

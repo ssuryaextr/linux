@@ -2419,8 +2419,13 @@ static struct fib6_info *addrconf_get_prefix_route(const struct in6_addr *pfx,
 		goto out;
 
 	for_each_fib6_node_rt_rcu(fn) {
-		struct fib6_nh *nh = fib6_info_nh(rt);
+		struct fib6_nh *nh;
 
+		/* prefix routes do not use nexthop objects */
+		if (rt->nh)
+			continue;
+
+		nh = fib6_info_nh(rt);
 		if (nh->fib_nh_dev->ifindex != dev->ifindex)
 			continue;
 		if (no_gw && nh->fib_nh_has_gw)

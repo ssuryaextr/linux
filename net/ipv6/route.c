@@ -435,7 +435,7 @@ void fib6_select_path(const struct net *net, struct fib6_result *res,
 	struct fib6_info *sibling, *next_sibling;
 	struct fib6_info *match = res->f6i;
 
-	if (!match->fib6_nsiblings || fl6->flowi6_oif)
+	if ((!match->fib6_nsiblings && !match->nh) || fl6->flowi6_oif)
 		goto out;
 
 	/* We might have already computed the hash for ICMPv6 errors. In such
@@ -443,6 +443,17 @@ void fib6_select_path(const struct net *net, struct fib6_result *res,
 	 */
 	if (!fl6->mp_hash)
 		fl6->mp_hash = rt6_multipath_hash(net, fl6, skb, NULL);
+
+	if (unlikely(match->nh)) {
+		if (nexthop_is_blackhole(match->nh)) {
+			res->fib6_type = RTN_BLACKHOLE;
+			res->fib6_flags |= RTF_REJECT;
+			res->nh = fib6_info_nh(match);
+		} else if (nexthop_is_multipath(match->nh)) {
+			nexthop_path_fib6_result(res, fl6->mp_hash);
+		}
+		return;
+	}
 
 	if (fl6->mp_hash <= atomic_read(&match->fib6_nh->fib_nh_upper_bound))
 		goto out;
@@ -491,6 +502,23 @@ static bool __rt6_device_match(struct net *net, const struct fib6_nh *nh,
 	return false;
 }
 
+struct fib6_nh_dm_arg {
+	struct net		*net;
+	const struct in6_addr	*saddr;
+	int			oif;
+	int			flags;
+	struct fib6_nh		*nh;
+};
+
+static int rt6_nh_dev_match(struct fib6_nh *nh, void *_arg)
+{
+	struct fib6_nh_dm_arg *arg = _arg;
+
+	arg->nh = nh;
+	return __rt6_device_match(arg->net, nh, arg->saddr, arg->oif,
+				  arg->flags);
+}
+
 static void rt6_device_match(struct net *net, struct fib6_result *res,
 			     const struct in6_addr *saddr, int oif, int flags)
 {
@@ -499,16 +527,44 @@ static void rt6_device_match(struct net *net, struct fib6_result *res,
 	struct fib6_nh *nh;
 
 	if (!oif && ipv6_addr_any(saddr)) {
+		if (unlikely(rt->nh)) {
+			if (nexthop_is_blackhole(rt->nh) && !oif) {
+				res->fib6_flags |= RTF_REJECT;
+				res->fib6_type = RTN_BLACKHOLE;
+				res->nh = fib6_info_nh(rt);
+				return;
+			}
+			/* rt->nh as a dev/gw covered by fib6_info_nh */
+		}
 		nh = fib6_info_nh(rt);
 		if (!(nh->fib_nh_flags & RTNH_F_DEAD))
 			goto out;
 	}
 
 	for (sprt = rt; sprt; sprt = rcu_dereference(sprt->fib6_next)) {
-		nh = fib6_info_nh(sprt);
-		if (__rt6_device_match(net, nh, saddr, oif, flags)) {
-			res->f6i = sprt;
-			goto out;
+		if (unlikely(sprt->nh)) {
+			struct fib6_nh_dm_arg arg = {
+				.net   = net,
+				.saddr = saddr,
+				.oif   = oif,
+				.flags = flags,
+			};
+
+			if (nexthop_is_blackhole(sprt->nh))
+				continue;
+
+			if (nexthop_for_each_fib6_nh(rt->nh, rt6_nh_dev_match,
+						     &arg)) {
+				nh = arg.nh;
+				res->f6i = sprt;
+				goto out;
+			}
+		} else {
+			nh = fib6_info_nh(sprt);
+			if (__rt6_device_match(net, nh, saddr, oif, flags)) {
+				res->f6i = sprt;
+				goto out;
+			}
 		}
 	}
 
@@ -696,6 +752,24 @@ out:
 	return rc;
 }
 
+struct fib6_nh_frl_arg {
+	u32		flags;
+	int		oif;
+	int		strict;
+	int		*mpri;
+	bool		*do_rr;
+	struct fib6_nh	*nh;
+};
+
+static int rt6_nh_find_match(struct fib6_nh *nh, void *_arg)
+{
+	struct fib6_nh_frl_arg *arg = _arg;
+
+	arg->nh = nh;
+	return find_match(nh, arg->flags, arg->oif, arg->strict,
+			  arg->mpri, arg->do_rr);
+}
+
 static void __find_rr_leaf(struct fib6_info *rt_start,
 			   struct fib6_info *nomatch, u32 metric,
 			   struct fib6_result *res, struct fib6_info **cont,
@@ -706,6 +780,7 @@ static void __find_rr_leaf(struct fib6_info *rt_start,
 	for (rt = rt_start;
 	     rt && rt != nomatch;
 	     rt = rcu_dereference(rt->fib6_next)) {
+		bool match = false;
 		struct fib6_nh *nh;
 
 		if (cont && rt->fib6_metric != metric) {
@@ -716,8 +791,36 @@ static void __find_rr_leaf(struct fib6_info *rt_start,
 		if (fib6_check_expired(rt))
 			continue;
 
-		nh = fib6_info_nh(rt);
-		if (find_match(nh, rt->fib6_flags, oif, strict, mpri, do_rr)) {
+		if (unlikely(rt->nh)) {
+			struct fib6_nh_frl_arg arg = {
+				.flags  = rt->fib6_flags,
+				.oif    = oif,
+				.strict = strict,
+				.mpri   = mpri,
+				.do_rr  = do_rr
+			};
+
+			if (nexthop_is_blackhole(rt->nh)) {
+				res->fib6_flags = RTF_REJECT;
+				res->fib6_type = RTN_BLACKHOLE;
+				res->f6i = rt;
+				res->nh = fib6_info_nh(rt);
+				return;
+			}
+			if (nexthop_for_each_fib6_nh(rt->nh, rt6_nh_find_match,
+						     &arg)) {
+				match = true;
+				nh = arg.nh;
+			}
+		} else {
+			nh = fib6_info_nh(rt);
+			if (find_match(nh, rt->fib6_flags, oif, strict, mpri,
+				       do_rr))
+				match = true;
+		}
+		if (match) {
+			res->fib6_flags = rt->fib6_flags;
+			res->fib6_type = rt->fib6_type;
 			res->f6i = rt;
 			res->nh = nh;
 			res->fib6_flags = rt->fib6_flags;
@@ -1118,6 +1221,8 @@ restart:
 		rt = net->ipv6.ip6_null_entry;
 		dst_hold(&rt->dst);
 		goto out;
+	} else if (res.fib6_flags & RTF_REJECT) {
+		goto do_create;
 	}
 
 	fib6_select_path(net, &res, fl6, fl6->flowi6_oif, skb, flags);
@@ -1128,6 +1233,7 @@ restart:
 		if (ip6_hold_safe(net, &rt))
 			dst_use_noref(&rt->dst, jiffies);
 	} else {
+do_create:
 		rt = ip6_create_rt_rcu(&res);
 		if (!rt) {
 			rt = net->ipv6.ip6_null_entry;
@@ -1549,6 +1655,9 @@ static void fib6_nh_flush_exceptions(struct fib6_nh *nh, struct fib6_info *from)
 	struct hlist_node *tmp;
 	int i;
 
+	if (!nh)
+		return;
+
 	spin_lock_bh(&rt6_exception_lock);
 	/* Prevent rt6_insert_exception() to recreate the bucket list */
 	if (!from)
@@ -1931,6 +2040,14 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
 		rt = net->ipv6.ip6_null_entry;
 		rcu_read_unlock();
 		dst_hold(&rt->dst);
+		return rt;
+	} else if (res.fib6_flags & RTF_REJECT) {
+		rt = ip6_create_rt_rcu(&res);
+		rcu_read_unlock();
+		if (!rt) {
+			rt = net->ipv6.ip6_null_entry;
+			dst_hold(&rt->dst);
+		}
 		return rt;
 	}
 
@@ -2397,7 +2514,7 @@ static void __ip6_rt_update_pmtu(struct dst_entry *dst, const struct sock *sk,
 		if (rt6->rt6i_flags & RTF_CACHE)
 			rt6_update_exception_stamp_rt(rt6);
 	} else if (daddr) {
-		struct fib6_result res = {};
+		struct fib6_result res;
 		struct rt6_info *nrt6;
 
 		rcu_read_lock();
@@ -2512,6 +2629,21 @@ static bool ip6_redirect_nh_match(struct fib6_result *res,
 	return true;
 }
 
+struct fib6_nh_rd_arg {
+	struct fib6_result	*res;
+	struct flowi6		*fl6;
+	const struct in6_addr	*gw;
+	struct rt6_info		**ret;
+};
+
+static int fib6_nh_redirect_match(struct fib6_nh *nh, void *_arg)
+{
+	struct fib6_nh_rd_arg *arg = _arg;
+
+	arg->res->nh = nh;
+	return ip6_redirect_nh_match(arg->res, arg->fl6, arg->gw, arg->ret);
+}
+
 /* Handle redirects */
 struct ip6rd_flowi {
 	struct flowi6 fl6;
@@ -2527,6 +2659,12 @@ static struct rt6_info *__ip6_route_redirect(struct net *net,
 	struct ip6rd_flowi *rdfl = (struct ip6rd_flowi *)fl6;
 	struct rt6_info *ret = NULL;
 	struct fib6_result res = {};
+	struct fib6_nh_rd_arg arg = {
+		.res = &res,
+		.fl6 = fl6,
+		.gw  = &rdfl->gateway,
+		.ret = &ret
+	};
 	struct fib6_info *rt;
 	struct fib6_node *fn;
 
@@ -2545,14 +2683,25 @@ static struct rt6_info *__ip6_route_redirect(struct net *net,
 restart:
 	for_each_fib6_node_rt_rcu(fn) {
 		res.f6i = rt;
-		res.nh = fib6_info_nh(rt);
 
 		if (fib6_check_expired(rt))
 			continue;
 		if (rt->fib6_flags & RTF_REJECT)
 			break;
-		if (ip6_redirect_nh_match(&res, fl6, &rdfl->gateway, &ret))
-			goto out;
+		if (unlikely(rt->nh)) {
+			if (nexthop_is_blackhole(rt->nh))
+				continue;
+			if (nexthop_for_each_fib6_nh(rt->nh,
+						     fib6_nh_redirect_match,
+						     &arg))
+				goto out;
+
+		} else {
+			res.nh = fib6_info_nh(rt);
+			if (ip6_redirect_nh_match(&res, fl6, &rdfl->gateway,
+						  &ret))
+				goto out;
+		}
 	}
 
 	if (!rt)
@@ -3153,6 +3302,7 @@ static struct fib6_info *ip6_route_info_create(struct fib6_config *cfg,
 {
 	struct net *net = cfg->fc_nlinfo.nl_net;
 	struct fib6_info *rt = NULL;
+	struct nexthop *nh = NULL;
 	struct fib6_table *table;
 	int err = -EINVAL;
 
@@ -3205,7 +3355,7 @@ static struct fib6_info *ip6_route_info_create(struct fib6_config *cfg,
 		goto out;
 
 	err = -ENOMEM;
-	rt = fib6_info_alloc(gfp_flags, true);
+	rt = fib6_info_alloc(gfp_flags, !nh);
 	if (!rt)
 		goto out;
 
@@ -3244,9 +3394,17 @@ static struct fib6_info *ip6_route_info_create(struct fib6_config *cfg,
 	ipv6_addr_prefix(&rt->fib6_src.addr, &cfg->fc_src, cfg->fc_src_len);
 	rt->fib6_src.plen = cfg->fc_src_len;
 #endif
-	err = fib6_nh_init(net, rt->fib6_nh, cfg, gfp_flags, extack);
-	if (err)
-		goto out;
+	if (nh) {
+		if (!nexthop_get(nh)) {
+			NL_SET_ERR_MSG(extack, "Nexthop has been deleted");
+			goto out;
+		}
+		rt->nh = nh;
+	} else {
+		err = fib6_nh_init(net, rt->fib6_nh, cfg, gfp_flags, extack);
+		if (err)
+			goto out;
+	}
 
 	if (!ipv6_addr_any(&cfg->fc_prefsrc)) {
 		struct net_device *dev = fib6_info_nh_dev(rt);
@@ -3410,6 +3568,7 @@ static int ip6_route_del(struct fib6_config *cfg,
 			if (cfg->fc_flags & RTF_CACHE) {
 				struct fib6_result res = {
 					.f6i = rt,
+					.nh = fib6_info_nh(rt),
 				};
 				int rc;
 
@@ -3989,6 +4148,7 @@ static struct fib6_info *rt6_multipath_first_sibling(const struct fib6_info *rt)
 	return NULL;
 }
 
+/* not called for rt->nh set */
 static bool rt6_is_dead(struct fib6_info *rt)
 {
 	const struct fib6_nh *fib6_nh = fib6_info_nh(rt);
@@ -4074,7 +4234,7 @@ static int fib6_ifup(struct fib6_info *rt, void *p_arg)
 	struct fib6_nh *nh = fib6_info_nh(rt);
 	struct net *net = dev_net(arg->dev);
 
-	if (rt != net->ipv6.fib6_null_entry &&
+	if (rt != net->ipv6.fib6_null_entry && !rt->nh &&
 	    nh->fib_nh_dev == arg->dev) {
 		nh->fib_nh_flags &= ~arg->nh_flags;
 		fib6_update_sernum_upto_root(net, rt);
@@ -4168,7 +4328,7 @@ static int fib6_ifdown(struct fib6_info *rt, void *p_arg)
 	struct net *net = dev_net(dev);
 	struct fib6_nh *nh;
 
-	if (rt == net->ipv6.fib6_null_entry)
+	if (rt == net->ipv6.fib6_null_entry || rt->nh)
 		return 0;
 
 	nh = fib6_info_nh(rt);
@@ -4709,6 +4869,9 @@ static size_t rt6_nlmsg_size(struct fib6_info *rt)
 	struct lwtunnel_state *lws = fib6_info_nh_lwt(rt);
 	int nexthop_len = 0;
 
+	if (rt->nh)
+		nexthop_len += nla_total_size(4); /* RTA_NH_ID */
+
 	if (rt->fib6_nsiblings) {
 		nexthop_len = nla_total_size(0)	 /* RTA_MULTIPATH */
 			    + NLA_ALIGN(sizeof(struct rtnexthop))
@@ -4733,6 +4896,35 @@ static size_t rt6_nlmsg_size(struct fib6_info *rt)
 	       + nla_total_size(1) /* RTA_PREF */
 	       + lwtunnel_get_encap_size(lws)
 	       + nexthop_len;
+}
+
+static int rt6_fill_node_nexthop(struct sk_buff *skb, struct nexthop *nh,
+				 unsigned int *flags)
+{
+	if (nexthop_is_multipath(nh)) {
+		struct nlattr *mp;
+
+		mp = nla_nest_start(skb, RTA_MULTIPATH);
+		if (!mp)
+			goto nla_put_failure;
+
+		if (nexthop_mpath_fill_node(skb, nh, false))
+			goto nla_put_failure;
+
+		nla_nest_end(skb, mp);
+	} else {
+		struct fib6_nh *fib6_nh;
+
+		fib6_nh = nexthop_fib6_nh(nh);
+		if (fib_nexthop_info(skb, &fib6_nh->nh_common,
+				     flags, false, false) < 0)
+			goto nla_put_failure;
+	}
+
+	return 0;
+
+nla_put_failure:
+	return -EMSGSIZE;
 }
 
 static int rt6_fill_node(struct net *net, struct sk_buff *skb,
@@ -4864,6 +5056,15 @@ static int rt6_fill_node(struct net *net, struct sk_buff *skb,
 		}
 
 		nla_nest_end(skb, mp);
+	} else if (rt->nh) {
+		if (nla_put_u32(skb, RTA_NH_ID, rt->nh->id))
+			goto nla_put_failure;
+
+		if (nexthop_is_blackhole(rt->nh))
+			rtm->rtm_type = RTN_BLACKHOLE;
+
+		if (rt6_fill_node_nexthop(skb, rt->nh, &rtm->rtm_flags) < 0)
+			goto nla_put_failure;
 	} else {
 		if (fib_nexthop_info(skb, &rt->fib6_nh->nh_common,
 				     &rtm->rtm_flags, false, false) < 0)
