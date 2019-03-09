@@ -2,6 +2,8 @@
 #ifndef _NET_IP6_ROUTE_H
 #define _NET_IP6_ROUTE_H
 
+#include <net/nexthop.h>
+
 struct route_info {
 	__u8			type;
 	__u8			length;
@@ -69,7 +71,7 @@ static inline bool rt6_need_strict(const struct in6_addr *daddr)
 static inline bool rt6_qualify_for_ecmp(struct fib6_info *f6i)
 {
 	return !(f6i->fib6_flags & (RTF_ADDRCONF|RTF_DYNAMIC)) &&
-		fib6_info_has_gw(f6i);
+		f6i->fib6_nh->fib_nh_has_gw;
 }
 
 void ip6_route_input(struct sk_buff *skb);

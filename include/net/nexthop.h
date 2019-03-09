@@ -262,4 +262,26 @@ static inline struct fib_nh_common *fib_info_nhc(struct fib_info *fi, int nhsel)
 
 	return &fi->fib_nh[nhsel].nh_common;
 }
+
+/* IPv6 variants
+ */
+static inline struct fib6_nh *fib6_info_nh(struct fib6_info *f6i)
+{
+	return f6i->fib6_nh;
+}
+
+static inline struct net_device *fib6_info_nh_dev(struct fib6_info *f6i)
+{
+	const struct fib6_nh *nh = fib6_info_nh(f6i);
+
+	return nh->fib_nh_dev;
+}
+
+static inline
+struct lwtunnel_state *fib6_info_nh_lwt(struct fib6_info *f6i)
+{
+	struct fib6_nh *nh = fib6_info_nh(f6i);
+
+	return nh->fib_nh_lws;
+}
 #endif

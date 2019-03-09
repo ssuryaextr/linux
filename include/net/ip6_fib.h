@@ -438,37 +438,10 @@ void rt6_get_prefsrc(const struct rt6_info *rt, struct in6_addr *addr)
 	rcu_read_unlock();
 }
 
-static inline struct fib6_nh *fib6_info_nh(struct fib6_info *f6i)
-{
-	return f6i->fib6_nh;
-}
-
-static inline bool fib6_info_has_gw(struct fib6_info *f6i)
-{
-	const struct fib6_nh *nh = fib6_info_nh(f6i);
-
-	return nh->fib_nh_has_gw;
-}
-
-static inline struct net_device *fib6_info_nh_dev(struct fib6_info *f6i)
-{
-	const struct fib6_nh *nh = fib6_info_nh(f6i);
-
-	return nh->fib_nh_dev;
-}
-
 int fib6_nh_init(struct net *net, struct fib6_nh *fib6_nh,
 		 struct fib6_config *cfg, gfp_t gfp_flags,
 		 struct netlink_ext_ack *extack);
 void fib6_nh_release(struct fib6_nh *fib6_nh);
-
-static inline
-struct lwtunnel_state *fib6_info_nh_lwt(struct fib6_info *f6i)
-{
-	struct fib6_nh *nh = fib6_info_nh(f6i);
-
-	return nh->fib_nh_lws;
-}
 
 int call_fib6_entry_notifiers(struct net *net,
 			      enum fib_event_type event_type,
