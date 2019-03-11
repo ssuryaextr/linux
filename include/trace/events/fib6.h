@@ -12,7 +12,7 @@
 
 TRACE_EVENT(fib6_table_lookup,
 
-	TP_PROTO(const struct net *net, const struct fib6_info *f6i,
+	TP_PROTO(const struct net *net, struct fib6_info *f6i,
 		 struct fib6_table *table, const struct flowi6 *flp),
 
 	TP_ARGS(net, f6i, table, flp),
@@ -36,6 +36,7 @@ TRACE_EVENT(fib6_table_lookup,
 	),
 
 	TP_fast_assign(
+		struct fib6_nh *fib6_nh = f6i->fib6_nh;
 		struct in6_addr *in6;
 
 		__entry->tb_id = table->tb6_id;
@@ -62,20 +63,20 @@ TRACE_EVENT(fib6_table_lookup,
 			__entry->dport = 0;
 		}
 
-		if (f6i->fib6_nh.nh_dev) {
-			__assign_str(name, f6i->fib6_nh.nh_dev);
+		if (fib6_nh && fib6_nh->nh_dev) {
+			__assign_str(name, fib6_nh->nh_dev);
 		} else {
 			__assign_str(name, "-");
 		}
-		if (f6i == net->ipv6.fib6_null_entry) {
+
+		if (!fib6_nh) {
 			struct in6_addr in6_zero = {};
 
 			in6 = (struct in6_addr *)__entry->gw;
 			*in6 = in6_zero;
-
-		} else if (f6i) {
+		} else {
 			in6 = (struct in6_addr *)__entry->gw;
-			*in6 = f6i->fib6_nh.nh_gw;
+			*in6 = fib6_nh->nh_gw;
 		}
 	),
 

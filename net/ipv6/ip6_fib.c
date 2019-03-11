@@ -147,11 +147,15 @@ static __be32 addr_bit_set(const void *token, int fn_bit)
 	       addr[fn_bit >> 5];
 }
 
-struct fib6_info *fib6_info_alloc(gfp_t gfp_flags)
+struct fib6_info *fib6_info_alloc(gfp_t gfp_flags, bool with_fib6_nh)
 {
 	struct fib6_info *f6i;
+	size_t sz = sizeof(*f6i);
 
-	f6i = kzalloc(sizeof(*f6i), gfp_flags);
+	if (with_fib6_nh)
+		sz += sizeof(struct fib6_nh);
+
+	f6i = kzalloc(sz, gfp_flags);
 	if (!f6i)
 		return NULL;
 
@@ -199,7 +203,7 @@ void fib6_info_destroy_rcu(struct rcu_head *head)
 		free_percpu(f6i->rt6i_pcpu);
 	}
 
-	fib6_nh_release(&f6i->fib6_nh);
+	fib6_nh_release(f6i->fib6_nh);
 
 	ip_fib_metrics_put(f6i->fib6_metrics);
 
@@ -2293,6 +2297,7 @@ void fib6_gc_cleanup(void)
 static int ipv6_route_seq_show(struct seq_file *seq, void *v)
 {
 	struct fib6_info *rt = v;
+	struct fib6_nh *fib6_nh = rt->fib6_nh;
 	struct ipv6_route_iter *iter = seq->private;
 	const struct net_device *dev;
 
@@ -2304,11 +2309,11 @@ static int ipv6_route_seq_show(struct seq_file *seq, void *v)
 	seq_puts(seq, "00000000000000000000000000000000 00 ");
 #endif
 	if (rt->fib6_flags & RTF_GATEWAY)
-		seq_printf(seq, "%pi6", &rt->fib6_nh.nh_gw);
+		seq_printf(seq, "%pi6", &fib6_nh->nh_gw);
 	else
 		seq_puts(seq, "00000000000000000000000000000000");
 
-	dev = rt->fib6_nh.nh_dev;
+	dev = fib6_nh->nh_dev;
 	seq_printf(seq, " %08x %08x %08x %08x %8s\n",
 		   rt->fib6_metric, atomic_read(&rt->fib6_ref), 0,
 		   rt->fib6_flags, dev ? dev->name : "");
