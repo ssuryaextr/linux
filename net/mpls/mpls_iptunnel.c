@@ -142,7 +142,8 @@ static int mpls_xmit(struct sk_buff *skb)
 			err = neigh_xmit(NEIGH_ARP_TABLE, out_dev, &rt->rt_gw4,
 					 skb);
 		else
-			err = -EAFNOSUPPORT;
+			err = neigh_xmit(NEIGH_ND_TABLE, out_dev, &rt->rt_gw6,
+					 skb);
 	} else if (rt6) {
 		err = neigh_xmit(NEIGH_ND_TABLE, out_dev, &rt6->rt6i_gateway,
 				 skb);

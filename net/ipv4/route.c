@@ -1528,10 +1528,15 @@ static void rt_set_nexthop(struct rtable *rt, __be32 daddr,
 	if (fi) {
 		struct fib_nh_common *nhc = FIB_RES_NH(*res);
 
-		if (nhc->nhc_gw.ipv4 && nhc->nhc_scope == RT_SCOPE_LINK) {
-			rt->rt_gw4 = nhc->nhc_gw.ipv4;
-			rt->rt_gw_family = AF_INET;
+		if (nhc->nhc_has_gw && nhc->nhc_scope == RT_SCOPE_LINK) {
+			rt->rt_gw_family = nhc->nhc_family;
+			/* only INET and INET6 are supported */
+			if (likely(nhc->nhc_family == AF_INET))
+				rt->rt_gw4 = nhc->nhc_gw.ipv4;
+			else
+				rt->rt_gw6 = nhc->nhc_gw.ipv6;
 		}
+
 		ip_dst_init_metrics(&rt->dst, fi->fib_metrics);
 
 #ifdef CONFIG_IP_ROUTE_CLASSID
@@ -2587,6 +2592,8 @@ struct dst_entry *ipv4_blackhole_route(struct net *net, struct dst_entry *dst_or
 		rt->rt_gw_family = ort->rt_gw_family;
 		if (rt->rt_gw_family == AF_INET)
 			rt->rt_gw4 = ort->rt_gw4;
+		else if (rt->rt_gw_family == AF_INET6)
+			rt->rt_gw6 = ort->rt_gw6;
 
 		INIT_LIST_HEAD(&rt->rt_uncached);
 	}
@@ -2666,8 +2673,21 @@ static int rt_fill_info(struct net *net, __be32 dst, __be32 src,
 			goto nla_put_failure;
 	}
 	if (rt->rt_gw_family == AF_INET &&
-	    nla_put_in_addr(skb, RTA_GATEWAY, rt->rt_gw4))
+	    nla_put_in_addr(skb, RTA_GATEWAY, rt->rt_gw4)) {
 		goto nla_put_failure;
+	} else if (rt->rt_gw_family == AF_INET6) {
+		int alen = sizeof(struct in6_addr);
+		struct nlattr *nla;
+		struct rtvia *via;
+
+		nla = nla_reserve(skb, RTA_VIA, alen + 2);
+		if (!nla)
+			goto nla_put_failure;
+
+		via = nla_data(nla);
+		via->rtvia_family = AF_INET6;
+		memcpy(via->rtvia_addr, &rt->rt_gw6, alen);
+	}
 
 	expires = rt->dst.expires;
 	if (expires) {
