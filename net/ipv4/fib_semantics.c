@@ -62,10 +62,10 @@ static struct hlist_head fib_info_devhash[DEVINDEX_HASHSIZE];
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
 
 #define for_nexthops(fi) {						\
-	int nhsel; struct fib_nh *nh;					\
-	for (nhsel = 0, nh = fib_info_nh((fi), 0);			\
+	int nhsel; struct fib_nh_common *nhc;				\
+	for (nhsel = 0, nhc = fib_info_nhc((fi), 0);			\
 	     nhsel < fib_info_num_path((fi));				\
-	     nhsel++, nh = fib_info_nh((fi), nhsel))
+	     nhsel++, nhc = fib_info_nhc((fi), nhsel))
 
 #define change_nexthops(fi) {						\
 	int nhsel; struct fib_nh *nexthop_nh;				\
@@ -79,8 +79,8 @@ static struct hlist_head fib_info_devhash[DEVINDEX_HASHSIZE];
 
 #define for_nexthops(fi) {						\
 	int nhsel;							\
-	struct fib_nh *nh = fib_info_nh((fi), 0);			\
-	for (nhsel = 0; nhsel < 1; nhsel++)
+	struct fib_nh_common *nhc;					\
+	for (nhsel = 0, nhc = fib_info_nhc((fi), 0); nhsel < 1; nhsel++)
 
 #define change_nexthops(fi) {						\
 	int nhsel;							\
@@ -251,9 +251,14 @@ void free_fib_info(struct fib_info *fi)
 	}
 	fib_info_cnt--;
 #ifdef CONFIG_IP_ROUTE_CLASSID
-	change_nexthops(fi) {
-		if (nexthop_nh->nh_tclassid)
-			fi->fib_net->ipv4.fib_num_tclassid_users--;
+	for_nexthops(fi) {
+		if (nhc->nhc_family == AF_INET) {
+			struct fib_nh *nh;
+
+			nh = container_of(nhc, struct fib_nh, nh_common);
+			if (nh->nh_tclassid)
+				fi->fib_net->ipv4.fib_num_tclassid_users--;
+		}
 	} endfor_nexthops(fi);
 #endif
 	call_rcu(&fi->rcu, free_fib_info_rcu);
@@ -281,20 +286,32 @@ void fib_release_info(struct fib_info *fi)
 static inline int nh_comp(struct fib_info *fi, struct fib_info *ofi)
 {
 	for_nexthops(fi) {
-		const struct fib_nh *onh = fib_info_nh(ofi, nhsel);
+		const struct fib_nh_common *onhc = fib_info_nhc(ofi, nhsel);
 
-		if (nh->fib_nh_oif != onh->fib_nh_oif ||
-		    nh->fib_nh_gw4 != onh->fib_nh_gw4 ||
-		    nh->fib_nh_scope != onh->fib_nh_scope ||
+		if (nhc->nhc_oif != onhc->nhc_oif ||
+		    nhc->nhc_family != onhc->nhc_family ||
+		    nhc->nhc_scope != onhc->nhc_scope ||
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
-		    nh->fib_nh_weight != onh->fib_nh_weight ||
+		    nhc->nhc_weight != onhc->nhc_weight ||
 #endif
-#ifdef CONFIG_IP_ROUTE_CLASSID
-		    nh->nh_tclassid != onh->nh_tclassid ||
-#endif
-		    lwtunnel_cmp_encap(nh->fib_nh_lws, onh->fib_nh_lws) ||
-		    ((nh->fib_nh_flags ^ onh->fib_nh_flags) & ~RTNH_COMPARE_MASK))
+		    lwtunnel_cmp_encap(nhc->nhc_lwtstate, onhc->nhc_lwtstate) ||
+		    ((nhc->nhc_flags ^ onhc->nhc_flags) & ~RTNH_COMPARE_MASK))
 			return -1;
+
+		if (nhc->nhc_family == AF_INET &&
+		    nhc->nhc_gw.ipv4 != onhc->nhc_gw.ipv4)
+			return -1;
+
+#ifdef CONFIG_IP_ROUTE_CLASSID
+		if (nhc->nhc_family == AF_INET) {
+			struct fib_nh *nh, *onh;
+
+			nh = container_of(nhc, struct fib_nh, nh_common);
+			onh = container_of(onhc, struct fib_nh, nh_common);
+			if (nh->nh_tclassid != onh->nh_tclassid)
+				return -1;
+		}
+#endif
 	} endfor_nexthops(fi);
 	return 0;
 }
@@ -317,7 +334,7 @@ static inline unsigned int fib_info_hashfn(struct fib_info *fi)
 	val ^= (__force u32)fi->fib_prefsrc;
 	val ^= fi->fib_priority;
 	for_nexthops(fi) {
-		val ^= fib_devindex_hashfn(nh->fib_nh_oif);
+		val ^= fib_devindex_hashfn(nhc->nhc_oif);
 	} endfor_nexthops(fi)
 
 	return (val ^ (val >> 7) ^ (val >> 12)) & mask;
@@ -404,10 +421,10 @@ static inline size_t fib_nlmsg_size(struct fib_info *fi)
 
 		/* grab encap info */
 		for_nexthops(fi) {
-			if (nh->fib_nh_lws) {
+			if (nhc->nhc_lwtstate) {
 				/* RTA_ENCAP_TYPE */
 				nh_encapsize += lwtunnel_get_encap_size(
-						nh->fib_nh_lws);
+						nhc->nhc_lwtstate);
 				/* RTA_ENCAP */
 				nh_encapsize +=  nla_total_size(2);
 			}
@@ -648,32 +665,32 @@ static void fib_rebalance(struct fib_info *fi)
 
 	total = 0;
 	for_nexthops(fi) {
-		if (nh->fib_nh_flags & RTNH_F_DEAD)
+		if (nhc->nhc_flags & RTNH_F_DEAD)
 			continue;
 
-		if (ip_ignore_linkdown(nh->fib_nh_dev) &&
-		    nh->fib_nh_flags & RTNH_F_LINKDOWN)
+		if (ip_ignore_linkdown(nhc->nhc_dev) &&
+		    nhc->nhc_flags & RTNH_F_LINKDOWN)
 			continue;
 
-		total += nh->fib_nh_weight;
+		total += nhc->nhc_weight;
 	} endfor_nexthops(fi);
 
 	w = 0;
-	change_nexthops(fi) {
+	for_nexthops(fi) {
 		int upper_bound;
 
-		if (nexthop_nh->fib_nh_flags & RTNH_F_DEAD) {
+		if (nhc->nhc_flags & RTNH_F_DEAD) {
 			upper_bound = -1;
-		} else if (ip_ignore_linkdown(nexthop_nh->fib_nh_dev) &&
-			   nexthop_nh->fib_nh_flags & RTNH_F_LINKDOWN) {
+		} else if (ip_ignore_linkdown(nhc->nhc_dev) &&
+			   nhc->nhc_flags & RTNH_F_LINKDOWN) {
 			upper_bound = -1;
 		} else {
-			w += nexthop_nh->fib_nh_weight;
+			w += nhc->nhc_weight;
 			upper_bound = DIV_ROUND_CLOSEST_ULL((u64)w << 31,
 							    total) - 1;
 		}
 
-		atomic_set(&nexthop_nh->fib_nh_upper_bound, upper_bound);
+		atomic_set(&nhc->nhc_upper_bound, upper_bound);
 	} endfor_nexthops(fi);
 }
 #else /* CONFIG_IP_ROUTE_MULTIPATH */
@@ -755,7 +772,7 @@ int fib_nh_match(struct fib_config *cfg, struct fib_info *fi,
 		if (!rtnh_ok(rtnh, remaining))
 			return -EINVAL;
 
-		if (rtnh->rtnh_ifindex && rtnh->rtnh_ifindex != nh->fib_nh_oif)
+		if (rtnh->rtnh_ifindex && rtnh->rtnh_ifindex != nhc->nhc_oif)
 			return 1;
 
 		attrlen = rtnh_attrlen(rtnh);
@@ -763,12 +780,18 @@ int fib_nh_match(struct fib_config *cfg, struct fib_info *fi,
 			struct nlattr *nla, *attrs = rtnh_attrs(rtnh);
 
 			nla = nla_find(attrs, attrlen, RTA_GATEWAY);
-			if (nla && nla_get_in_addr(nla) != nh->fib_nh_gw4)
+			if (nla && nla_get_in_addr(nla) != nhc->nhc_gw.ipv4)
 				return 1;
+
 #ifdef CONFIG_IP_ROUTE_CLASSID
-			nla = nla_find(attrs, attrlen, RTA_FLOW);
-			if (nla && nla_get_u32(nla) != nh->nh_tclassid)
-				return 1;
+			if (nhc->nhc_family == AF_INET) {
+				struct fib_nh *nh;
+
+				nh = container_of(nhc, struct fib_nh, nh_common);
+				nla = nla_find(attrs, attrlen, RTA_FLOW);
+				if (nla && nla_get_u32(nla) != nh->nh_tclassid)
+					return 1;
+			}
 #endif
 		}
 
@@ -1425,12 +1448,19 @@ static int fib_add_multipath(struct sk_buff *skb, struct fib_info *fi)
 		goto nla_put_failure;
 
 	for_nexthops(fi) {
-		if (fib_add_nexthop(skb, &nh->nh_common, nh->fib_nh_weight, true) < 0)
+		if (fib_add_nexthop(skb, nhc, nhc->nhc_weight, true) < 0)
 			goto nla_put_failure;
+
 #ifdef CONFIG_IP_ROUTE_CLASSID
-		if (nh->nh_tclassid &&
-		    nla_put_u32(skb, RTA_FLOW, nh->nh_tclassid))
-			goto nla_put_failure;
+		if (nhc->nhc_family == AF_INET) {
+			struct fib_nh *nh;
+
+			nh = container_of(nhc, struct fib_nh, nh_common);
+
+			if (nh->nh_tclassid &&
+			    nla_put_u32(skb, RTA_FLOW, nh->nh_tclassid))
+				goto nla_put_failure;
+		}
 #endif
 	} endfor_nexthops(fi);
 
@@ -1489,17 +1519,23 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 	    nla_put_in_addr(skb, RTA_PREFSRC, fi->fib_prefsrc))
 		goto nla_put_failure;
 	if (nhs == 1) {
-		const struct fib_nh *nh = fib_info_nh(fi, 0);
+		const struct fib_nh_common *nhc = fib_info_nhc(fi, 0);
 		unsigned int flags = 0;
 
-		if (fib_nexthop_info(skb, &nh->nh_common, &flags, false, true) < 0)
+		if (fib_nexthop_info(skb, nhc, &flags, false, true) < 0)
 			goto nla_put_failure;
 
 		rtm->rtm_flags = flags;
+
 #ifdef CONFIG_IP_ROUTE_CLASSID
-		if (nh->nh_tclassid &&
-		    nla_put_u32(skb, RTA_FLOW, nh->nh_tclassid))
-			goto nla_put_failure;
+		if (nhc->nhc_family == AF_INET) {
+			const struct fib_nh *nh;
+
+			nh = container_of(nhc, struct fib_nh, nh_common);
+			if (nh->nh_tclassid &&
+			    nla_put_u32(skb, RTA_FLOW, nh->nh_tclassid))
+				goto nla_put_failure;
+		}
 #endif
 	} else if (nhs > 1) {
 		if (fib_add_multipath(skb, fi) < 0)
@@ -1837,17 +1873,18 @@ int fib_sync_up(struct net_device *dev, unsigned int nh_flags)
 }
 
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
-static bool fib_good_nh(const struct fib_nh *nh)
+static bool fib_good_nh(const struct fib_nh_common *nhc)
 {
 	int state = NUD_REACHABLE;
 
-	if (nh->fib_nh_scope == RT_SCOPE_LINK) {
-		struct neighbour *n;
+	if (nhc->nhc_scope == RT_SCOPE_LINK) {
+		struct neighbour *n = NULL;
 
 		rcu_read_lock_bh();
 
-		n = __ipv4_neigh_lookup_noref(nh->fib_nh_dev,
-					      (__force u32)nh->fib_nh_gw4);
+		if (nhc->nhc_family == AF_INET)
+			n = __ipv4_neigh_lookup_noref(nhc->nhc_dev,
+						 (__force u32)nhc->nhc_gw.ipv4);
 		if (n)
 			state = n->nud_state;
 
@@ -1865,20 +1902,20 @@ void fib_select_multipath(struct fib_result *res, int hash)
 
 	for_nexthops(fi) {
 		if (net->ipv4.sysctl_fib_multipath_use_neigh) {
-			if (!fib_good_nh(nh))
+			if (!fib_good_nh(nhc))
 				continue;
 			if (!first) {
 				res->nh_sel = nhsel;
-				res->nhc = &nh->nh_common;
+				res->nhc = nhc;
 				first = true;
 			}
 		}
 
-		if (hash > atomic_read(&nh->fib_nh_upper_bound))
+		if (hash > atomic_read(&nhc->nhc_upper_bound))
 			continue;
 
 		res->nh_sel = nhsel;
-		res->nhc = &nh->nh_common;
+		res->nhc = nhc;
 		return;
 	} endfor_nexthops(fi);
 }
