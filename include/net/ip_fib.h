@@ -131,9 +131,12 @@ struct fib_nh {
  * This structure contains data shared by many of routes.
  */
 
+struct nexthop;
+
 struct fib_info {
 	struct hlist_node	fib_hash;
 	struct hlist_node	fib_lhash;
+	struct list_head	nh_list;
 	struct net		*fib_net;
 	int			fib_treeref;
 	refcount_t		fib_clntref;
@@ -151,6 +154,7 @@ struct fib_info {
 #define fib_window fib_metrics->metrics[RTAX_WINDOW-1]
 #define fib_rtt fib_metrics->metrics[RTAX_RTT-1]
 #define fib_advmss fib_metrics->metrics[RTAX_ADVMSS-1]
+	struct nexthop		*nh;
 	int			fib_nhs;
 	struct rcu_head		rcu;
 	struct fib_nh		fib_nh[0];
