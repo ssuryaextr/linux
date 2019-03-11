@@ -2287,12 +2287,12 @@ static int ofdpa_port_fib_ipv4(struct ofdpa_port *ofdpa_port,  __be32 dst,
 	/* XXX support ECMP */
 
 	nh = fib_info_nh(fi, 0);
-	nh_on_port = (nh->nh_dev == ofdpa_port->dev);
-	has_gw = !!nh->nh_gw;
+	nh_on_port = (nh->fib_nh_dev == ofdpa_port->dev);
+	has_gw = !!nh->fib_nh_gw4;
 
 	if (has_gw && nh_on_port) {
 		err = ofdpa_port_ipv4_nh(ofdpa_port, flags,
-					 nh->nh_gw, &index);
+					 nh->fib_nh_gw4, &index);
 		if (err)
 			return err;
 
@@ -2743,7 +2743,7 @@ static int ofdpa_fib4_add(struct rocker *rocker,
 	if (ofdpa->fib_aborted)
 		return 0;
 	nh = fib_info_nh(fen_info->fi, 0);
-	ofdpa_port = ofdpa_port_dev_lower_find(nh->nh_dev, rocker);
+	ofdpa_port = ofdpa_port_dev_lower_find(nh->fib_nh_dev, rocker);
 	if (!ofdpa_port)
 		return 0;
 	err = ofdpa_port_fib_ipv4(ofdpa_port, htonl(fen_info->dst),
@@ -2751,7 +2751,7 @@ static int ofdpa_fib4_add(struct rocker *rocker,
 				  fen_info->tb_id, 0);
 	if (err)
 		return err;
-	nh->nh_flags |= RTNH_F_OFFLOAD;
+	nh->fib_nh_flags |= RTNH_F_OFFLOAD;
 	return 0;
 }
 
@@ -2765,10 +2765,10 @@ static int ofdpa_fib4_del(struct rocker *rocker,
 	if (ofdpa->fib_aborted)
 		return 0;
 	nh = fib_info_nh(fen_info->fi, 0);
-	ofdpa_port = ofdpa_port_dev_lower_find(nh->nh_dev, rocker);
+	ofdpa_port = ofdpa_port_dev_lower_find(nh->fib_nh_dev, rocker);
 	if (!ofdpa_port)
 		return 0;
-	nh->nh_flags &= ~RTNH_F_OFFLOAD;
+	nh->fib_nh_flags &= ~RTNH_F_OFFLOAD;
 	return ofdpa_port_fib_ipv4(ofdpa_port, htonl(fen_info->dst),
 				   fen_info->dst_len, fen_info->fi,
 				   fen_info->tb_id, OFDPA_OP_FLAG_REMOVE);
@@ -2794,10 +2794,10 @@ static void ofdpa_fib4_abort(struct rocker *rocker)
 		    ROCKER_OF_DPA_TABLE_ID_UNICAST_ROUTING)
 			continue;
 		nh = fib_info_nh(flow_entry->fi, 0);
-		ofdpa_port = ofdpa_port_dev_lower_find(nh->nh_dev, rocker);
+		ofdpa_port = ofdpa_port_dev_lower_find(nh->fib_nh_dev, rocker);
 		if (!ofdpa_port)
 			continue;
-		nh->nh_flags &= ~RTNH_F_OFFLOAD;
+		nh->fib_nh_flags &= ~RTNH_F_OFFLOAD;
 		ofdpa_flow_tbl_del(ofdpa_port, OFDPA_OP_FLAG_REMOVE,
 				   flow_entry);
 	}

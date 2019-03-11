@@ -148,7 +148,7 @@ static bool fib4_rule_suppress(struct fib_rule *rule, struct fib_lookup_arg *arg
 	if (result->fi) {
 		struct fib_nh *nh = fib_info_nh(result->fi, 0);
 
-		dev = nh->nh_dev;
+		dev = nh->fib_nh_dev;
 	}
 
 	/* do not accept result if the route does

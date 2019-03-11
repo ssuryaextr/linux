@@ -1472,15 +1472,15 @@ found:
 		for (nhsel = 0; nhsel < fib_info_num_path(fi); nhsel++) {
 			struct fib_nh *nh = fib_info_nh(fi, nhsel);
 
-			if (nh->nh_flags & RTNH_F_DEAD)
+			if (nh->fib_nh_flags & RTNH_F_DEAD)
 				continue;
-			if (ip_ignore_linkdown(nh->nh_dev) &&
-			    nh->nh_flags & RTNH_F_LINKDOWN &&
+			if (ip_ignore_linkdown(nh->fib_nh_dev) &&
+			    nh->fib_nh_flags & RTNH_F_LINKDOWN &&
 			    !(fib_flags & FIB_LOOKUP_IGNORE_LINKSTATE))
 				continue;
 			if (!(flp->flowi4_flags & FLOWI_FLAG_SKIP_NH_OIF)) {
 				if (flp->flowi4_oif &&
-				    flp->flowi4_oif != nh->nh_oif)
+				    flp->flowi4_oif != nh->fib_nh_oif)
 					continue;
 			}
 
@@ -2654,7 +2654,7 @@ static unsigned int fib_flag_trans(int type, __be32 mask, struct fib_info *fi)
 	if (fi) {
 		const struct fib_nh *nh = fib_info_nh(fi, 0);
 
-		if (nh->nh_gw)
+		if (nh->fib_nh_gw4)
 			flags |= RTF_GATEWAY;
 	}
 	if (mask == htonl(0xFFFFFFFF))
@@ -2706,9 +2706,9 @@ static int fib_route_seq_show(struct seq_file *seq, void *v)
 			seq_printf(seq,
 				   "%s\t%08X\t%08X\t%04X\t%d\t%u\t"
 				   "%d\t%08X\t%d\t%u\t%u",
-				   nh->nh_dev ? nh->nh_dev->name : "*",
+				   nh->fib_nh_dev ? nh->fib_nh_dev->name : "*",
 				   prefix,
-				   nh->nh_gw, flags, 0, 0,
+				   nh->fib_nh_gw4, flags, 0, 0,
 				   fi->fib_priority,
 				   mask,
 				   (fi->fib_advmss ?
