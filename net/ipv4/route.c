@@ -99,6 +99,7 @@
 #include <net/inetpeer.h>
 #include <net/sock.h>
 #include <net/ip_fib.h>
+#include <net/nexthop.h>
 #include <net/arp.h>
 #include <net/tcp.h>
 #include <net/icmp.h>

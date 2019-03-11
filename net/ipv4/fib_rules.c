@@ -31,6 +31,7 @@
 #include <net/route.h>
 #include <net/tcp.h>
 #include <net/ip_fib.h>
+#include <net/nexthop.h>
 #include <net/fib_rules.h>
 
 struct fib4_rule {

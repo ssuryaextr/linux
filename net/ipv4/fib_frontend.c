@@ -43,6 +43,7 @@
 #include <net/sock.h>
 #include <net/arp.h>
 #include <net/ip_fib.h>
+#include <net/nexthop.h>
 #include <net/rtnetlink.h>
 #include <net/xfrm.h>
 #include <net/l3mdev.h>

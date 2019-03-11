@@ -40,14 +40,6 @@ int fib_dump_info(struct sk_buff *skb, u32 pid, u32 seq, int event, u32 tb_id,
 void rtmsg_fib(int event, __be32 key, struct fib_alias *fa, int dst_len,
 	       u32 tb_id, const struct nl_info *info, unsigned int nlm_flags);
 
-static inline void fib_result_assign(struct fib_result *res,
-				     struct fib_info *fi)
-{
-	/* we used to play games with refcounts, but we now use RCU */
-	res->fi = fi;
-	res->nhc = fib_info_nhc(fi, 0);
-}
-
 struct fib_prop {
 	int	error;
 	u8	scope;

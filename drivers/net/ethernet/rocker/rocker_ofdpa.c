@@ -22,6 +22,7 @@
 #include <net/neighbour.h>
 #include <net/switchdev.h>
 #include <net/ip_fib.h>
+#include <net/nexthop.h>
 #include <net/arp.h>
 
 #include "rocker.h"

@@ -82,6 +82,7 @@
 #include <net/tcp.h>
 #include <net/sock.h>
 #include <net/ip_fib.h>
+#include <net/nexthop.h>
 #include <net/fib_notifier.h>
 #include <trace/events/fib.h>
 #include "fib_lookup.h"

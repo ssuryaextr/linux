@@ -190,21 +190,6 @@ struct fib_result_nl {
 	int             err;
 };
 
-static inline unsigned int fib_info_num_path(const struct fib_info *fi)
-{
-	return fi->fib_nhs;
-}
-
-static inline struct fib_nh *fib_info_nh(struct fib_info *fi, int nhsel)
-{
-	return &fi->fib_nh[nhsel];
-}
-
-static inline struct fib_nh_common *fib_info_nhc(struct fib_info *fi, int nhsel)
-{
-	return &fi->fib_nh[nhsel].nh_common;
-}
-
 #ifdef CONFIG_IP_MULTIPLE_TABLES
 #define FIB_TABLE_HASHSZ 256
 #else

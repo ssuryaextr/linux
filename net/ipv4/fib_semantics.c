@@ -42,6 +42,7 @@
 #include <net/sock.h>
 #include <net/ip_fib.h>
 #include <net/ip6_fib.h>
+#include <net/nexthop.h>
 #include <net/netlink.h>
 #include <net/rtnh.h>
 #include <net/lwtunnel.h>
@@ -1862,6 +1863,13 @@ int fib_sync_down_dev(struct net_device *dev, unsigned long event, bool force)
 	}
 
 	return ret;
+}
+
+static void fib_result_assign(struct fib_result *res, struct fib_info *fi)
+{
+	/* we used to play games with refcounts, but we now use RCU */
+	res->fi = fi;
+	res->nhc = fib_info_nhc(fi, 0);
 }
 
 /* Must be invoked inside of an RCU protected region.  */
