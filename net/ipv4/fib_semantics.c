@@ -302,6 +302,10 @@ static inline int nh_comp(struct fib_info *fi, struct fib_info *ofi)
 		    nhc->nhc_gw.ipv4 != onhc->nhc_gw.ipv4)
 			return -1;
 
+		if (nhc->nhc_family == AF_INET6 &&
+		    ipv6_addr_cmp(&nhc->nhc_gw.ipv6, &onhc->nhc_gw.ipv6))
+			return -1;
+
 #ifdef CONFIG_IP_ROUTE_CLASSID
 		if (nhc->nhc_family == AF_INET) {
 			struct fib_nh *nh, *onh;
@@ -540,6 +544,10 @@ int fib_nh_init(struct net *net, struct fib_nh *nh,
 	if (cfg->fc_gw_family == AF_INET) {
 		nh->fib_nh_gw4 = cfg->fc_gw4;
 		nh->fib_nh_has_gw = 1;
+	} else if (cfg->fc_gw_family == AF_INET6) {
+		nh->fib_nh_family = AF_INET6;
+		nh->fib_nh_gw6 = cfg->fc_gw6;
+		nh->fib_nh_has_gw = 1;
 	}
 	nh->fib_nh_flags = cfg->fc_flags;
 
@@ -643,7 +651,9 @@ static int fib_get_nhs(struct fib_info *fi, struct rtnexthop *rtnh,
 	if (cfg->fc_gw_family) {
 		if (cfg->fc_gw_family != nh->fib_nh_family ||
 		    (cfg->fc_gw_family == AF_INET &&
-		     nh->fib_nh_gw4 != cfg->fc_gw4)) {
+		     nh->fib_nh_gw4 != cfg->fc_gw4) ||
+		    (cfg->fc_gw_family == AF_INET6 &&
+		     ipv6_addr_cmp(&nh->fib_nh_gw6, &cfg->fc_gw6))) {
 			NL_SET_ERR_MSG(extack,
 				       "Nexthop gateway does not match RTA_GATEWAY");
 			goto errout;
@@ -766,6 +776,10 @@ int fib_nh_match(struct fib_config *cfg, struct fib_info *fi,
 
 		if (cfg->fc_gw_family == AF_INET &&
 		    cfg->fc_gw4 != nh->fib_nh_gw4)
+			return 1;
+
+		if (cfg->fc_gw_family == AF_INET6 &&
+		    ipv6_addr_cmp(&cfg->fc_gw6, &nh->fib_nh_gw6))
 			return 1;
 
 		return 0;
@@ -1283,7 +1297,7 @@ struct fib_info *fib_create_info(struct fib_config *cfg,
 				       "Route with host scope can not have multiple nexthops");
 			goto err_inval;
 		}
-		if (nh->fib_nh_gw4) {
+		if (nh->fib_nh_has_gw) {
 			NL_SET_ERR_MSG(extack,
 				       "Route with host scope can not have a gateway");
 			goto err_inval;
@@ -1897,6 +1911,9 @@ static bool fib_good_nh(const struct fib_nh_common *nhc)
 		if (nhc->nhc_family == AF_INET)
 			n = __ipv4_neigh_lookup_noref(nhc->nhc_dev,
 						 (__force u32)nhc->nhc_gw.ipv4);
+		else
+			n = __ipv6_neigh_lookup_noref_stub(nhc->nhc_dev,
+							   &nhc->nhc_gw.ipv6);
 		if (n)
 			state = n->nud_state;
 
