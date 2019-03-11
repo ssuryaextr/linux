@@ -125,7 +125,6 @@ struct fib_info {
 	int			fib_nhs;
 	struct rcu_head		rcu;
 	struct fib_nh		fib_nh[0];
-#define fib_dev		fib_nh[0].nh_dev
 };
 
 
@@ -161,10 +160,20 @@ struct fib_result_nl {
 	int             err;
 };
 
+static inline unsigned int fib_info_num_path(const struct fib_info *fi)
+{
+	return fi->fib_nhs;
+}
+
+static inline struct fib_nh *fib_info_nh(struct fib_info *fi, int nhsel)
+{
+	return &fi->fib_nh[nhsel];
+}
+
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
-#define FIB_RES_NH(res)		((res).fi->fib_nh[(res).nh_sel])
+#define FIB_RES_NH(res)		fib_info_nh((res).fi, (res).nh_sel)
 #else /* CONFIG_IP_ROUTE_MULTIPATH */
-#define FIB_RES_NH(res)		((res).fi->fib_nh[0])
+#define FIB_RES_NH(res)		fib_info_nh((res).fi, 0)
 #endif /* CONFIG_IP_ROUTE_MULTIPATH */
 
 #ifdef CONFIG_IP_MULTIPLE_TABLES
@@ -176,13 +185,13 @@ struct fib_result_nl {
 __be32 fib_info_update_nh_saddr(struct net *net, struct fib_nh *nh);
 
 #define FIB_RES_SADDR(net, res)				\
-	((FIB_RES_NH(res).nh_saddr_genid ==		\
+	((FIB_RES_NH(res)->nh_saddr_genid ==		\
 	  atomic_read(&(net)->ipv4.dev_addr_genid)) ?	\
-	 FIB_RES_NH(res).nh_saddr :			\
-	 fib_info_update_nh_saddr((net), &FIB_RES_NH(res)))
-#define FIB_RES_GW(res)			(FIB_RES_NH(res).nh_gw)
-#define FIB_RES_DEV(res)		(FIB_RES_NH(res).nh_dev)
-#define FIB_RES_OIF(res)		(FIB_RES_NH(res).nh_oif)
+	 FIB_RES_NH(res)->nh_saddr :			\
+	 fib_info_update_nh_saddr((net), FIB_RES_NH(res)))
+#define FIB_RES_GW(res)			(FIB_RES_NH(res)->nh_gw)
+#define FIB_RES_DEV(res)		(FIB_RES_NH(res)->nh_dev)
+#define FIB_RES_OIF(res)		(FIB_RES_NH(res)->nh_oif)
 
 #define FIB_RES_PREFSRC(net, res)	((res).fi->fib_prefsrc ? : \
 					 FIB_RES_SADDR(net, res))
@@ -431,7 +440,7 @@ static inline void fib_combine_itag(u32 *itag, const struct fib_result *res)
 #ifdef CONFIG_IP_MULTIPLE_TABLES
 	u32 rtag;
 #endif
-	*itag = FIB_RES_NH(*res).nh_tclassid<<16;
+	*itag = FIB_RES_NH(*res)->nh_tclassid << 16;
 #ifdef CONFIG_IP_MULTIPLE_TABLES
 	rtag = res->tclassid;
 	if (*itag == 0)

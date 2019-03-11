@@ -776,7 +776,7 @@ static void __ip_do_redirect(struct rtable *rt, struct sk_buff *skb, struct flow
 			neigh_event_send(n, NULL);
 		} else {
 			if (fib_lookup(net, fl4, &res, 0) == 0) {
-				struct fib_nh *nh = &FIB_RES_NH(res);
+				struct fib_nh *nh = FIB_RES_NH(res);
 
 				update_or_create_fnhe(nh, fl4->daddr, new_gw,
 						0, false,
@@ -1025,7 +1025,7 @@ static void __ip_rt_update_pmtu(struct rtable *rt, struct flowi4 *fl4, u32 mtu)
 
 	rcu_read_lock();
 	if (fib_lookup(dev_net(dst->dev), fl4, &res, 0) == 0) {
-		struct fib_nh *nh = &FIB_RES_NH(res);
+		struct fib_nh *nh = FIB_RES_NH(res);
 
 		update_or_create_fnhe(nh, fl4->daddr, 0, mtu, lock,
 				      jiffies + ip_rt_mtu_expires);
@@ -1349,7 +1349,7 @@ static struct fib_nh_exception *find_exception(struct fib_nh *nh, __be32 daddr)
 u32 ip_mtu_from_fib_result(struct fib_result *res, __be32 daddr)
 {
 	struct fib_info *fi = res->fi;
-	struct fib_nh *nh = &fi->fib_nh[res->nh_sel];
+	struct fib_nh *nh = fib_info_nh(fi, res->nh_sel);
 	struct net_device *dev = nh->nh_dev;
 	u32 mtu = 0;
 
@@ -1523,7 +1523,7 @@ static void rt_set_nexthop(struct rtable *rt, __be32 daddr,
 	bool cached = false;
 
 	if (fi) {
-		struct fib_nh *nh = &FIB_RES_NH(*res);
+		struct fib_nh *nh = FIB_RES_NH(*res);
 
 		if (nh->nh_gw && nh->nh_scope == RT_SCOPE_LINK) {
 			rt->rt_gateway = nh->nh_gw;
@@ -1738,12 +1738,12 @@ static int __mkroute_input(struct sk_buff *skb,
 		}
 	}
 
-	fnhe = find_exception(&FIB_RES_NH(*res), daddr);
+	fnhe = find_exception(FIB_RES_NH(*res), daddr);
 	if (do_cache) {
 		if (fnhe)
 			rth = rcu_dereference(fnhe->fnhe_rth_input);
 		else
-			rth = rcu_dereference(FIB_RES_NH(*res).nh_rth_input);
+			rth = rcu_dereference(FIB_RES_NH(*res)->nh_rth_input);
 		if (rt_cache_valid(rth)) {
 			skb_dst_set_noref(skb, &rth->dst);
 			goto out;
@@ -1885,7 +1885,7 @@ static int ip_mkroute_input(struct sk_buff *skb,
 			    struct flow_keys *hkeys)
 {
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
-	if (res->fi && res->fi->fib_nhs > 1) {
+	if (res->fi && fib_info_num_path(res->fi) > 1) {
 		int h = fib_multipath_hash(res->fi->fib_net, NULL, skb, hkeys);
 
 		fib_select_multipath(res, h);
@@ -2037,7 +2037,7 @@ local_input:
 	do_cache = false;
 	if (res->fi) {
 		if (!itag) {
-			rth = rcu_dereference(FIB_RES_NH(*res).nh_rth_input);
+			rth = rcu_dereference(FIB_RES_NH(*res)->nh_rth_input);
 			if (rt_cache_valid(rth)) {
 				skb_dst_set_noref(skb, &rth->dst);
 				err = 0;
@@ -2067,7 +2067,7 @@ local_input:
 	}
 
 	if (do_cache) {
-		struct fib_nh *nh = &FIB_RES_NH(*res);
+		struct fib_nh *nh = FIB_RES_NH(*res);
 
 		rth->dst.lwtstate = lwtstate_get(nh->nh_lwtstate);
 		if (lwtunnel_input_redirect(rth->dst.lwtstate)) {
@@ -2247,7 +2247,7 @@ static struct rtable *__mkroute_output(const struct fib_result *res,
 	do_cache &= fi != NULL;
 	if (fi) {
 		struct rtable __rcu **prth;
-		struct fib_nh *nh = &FIB_RES_NH(*res);
+		struct fib_nh *nh = FIB_RES_NH(*res);
 
 		fnhe = find_exception(nh, fl4->daddr);
 		if (!do_cache)

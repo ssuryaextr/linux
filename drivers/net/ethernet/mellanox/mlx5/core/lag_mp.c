@@ -110,6 +110,8 @@ static void mlx5_lag_fib_route_event(struct mlx5_lag *ldev,
 				     struct fib_info *fi)
 {
 	struct lag_mp *mp = &ldev->lag_mp;
+	struct fib_nh *fib_nh0, *fib_nh1;
+	unsigned int nhs;
 
 	/* Handle delete event */
 	if (event == FIB_EVENT_ENTRY_DEL) {
@@ -119,10 +121,12 @@ static void mlx5_lag_fib_route_event(struct mlx5_lag *ldev,
 		return;
 	}
 
+	nhs = fib_info_num_path(fi);
 	/* Handle add/replace event */
-	if (fi->fib_nhs == 1) {
+	if (nhs == 1) {
 		if (__mlx5_lag_is_active(ldev)) {
-			struct net_device *nh_dev = fi->fib_nh[0].nh_dev;
+			struct fib_nh *nh = fib_info_nh(fi, 0);
+			struct net_device *nh_dev = nh->nh_dev;
 			int i = mlx5_lag_dev_get_netdev_idx(ldev, nh_dev);
 
 			mlx5_lag_set_port_affinity(ldev, ++i);
@@ -130,14 +134,16 @@ static void mlx5_lag_fib_route_event(struct mlx5_lag *ldev,
 		return;
 	}
 
-	if (fi->fib_nhs != 2)
+	if (nhs != 2)
 		return;
 
 	/* Verify next hops are ports of the same hca */
-	if (!(fi->fib_nh[0].nh_dev == ldev->pf[0].netdev &&
-	      fi->fib_nh[1].nh_dev == ldev->pf[1].netdev) &&
-	    !(fi->fib_nh[0].nh_dev == ldev->pf[1].netdev &&
-	      fi->fib_nh[1].nh_dev == ldev->pf[0].netdev)) {
+	fib_nh0 = fib_info_nh(fi, 0);
+	fib_nh1 = fib_info_nh(fi, 1);
+	if (!(fib_nh0->nh_dev == ldev->pf[0].netdev &&
+	      fib_nh1->nh_dev == ldev->pf[1].netdev) &&
+	    !(fib_nh0->nh_dev == ldev->pf[1].netdev &&
+	      fib_nh1->nh_dev == ldev->pf[0].netdev)) {
 		mlx5_core_warn(ldev->pf[0].dev, "Multipath offload require two ports of the same HCA\n");
 		return;
 	}
@@ -174,7 +180,7 @@ static void mlx5_lag_fib_nexthop_event(struct mlx5_lag *ldev,
 			mlx5_lag_set_port_affinity(ldev, i);
 		}
 	} else if (event == FIB_EVENT_NH_ADD &&
-		   fi->fib_nhs == 2) {
+		   fib_info_num_path(fi) == 2) {
 		mlx5_lag_set_port_affinity(ldev, 0);
 	}
 }
@@ -238,6 +244,7 @@ static int mlx5_lag_fib_event(struct notifier_block *nb,
 	struct mlx5_fib_event_work *fib_work;
 	struct fib_entry_notifier_info *fen_info;
 	struct fib_nh_notifier_info *fnh_info;
+	struct net_device *fib_dev;
 	struct fib_info *fi;
 
 	if (info->family != AF_INET)
@@ -254,8 +261,9 @@ static int mlx5_lag_fib_event(struct notifier_block *nb,
 		fen_info = container_of(info, struct fib_entry_notifier_info,
 					info);
 		fi = fen_info->fi;
-		if (fi->fib_dev != ldev->pf[0].netdev &&
-		    fi->fib_dev != ldev->pf[1].netdev) {
+		fib_dev = fib_info_nh(fen_info->fi, 0)->nh_dev;
+		if (fib_dev != ldev->pf[0].netdev &&
+		    fib_dev != ldev->pf[1].netdev) {
 			return NOTIFY_DONE;
 		}
 		fib_work = mlx5_lag_init_fib_work(ldev, event);

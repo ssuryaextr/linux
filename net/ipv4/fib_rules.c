@@ -145,8 +145,11 @@ static bool fib4_rule_suppress(struct fib_rule *rule, struct fib_lookup_arg *arg
 	struct fib_result *result = (struct fib_result *) arg->result;
 	struct net_device *dev = NULL;
 
-	if (result->fi)
-		dev = result->fi->fib_dev;
+	if (result->fi) {
+		struct fib_nh *nh = fib_info_nh(result->fi, 0);
+
+		dev = nh->nh_dev;
+	}
 
 	/* do not accept result if the route does
 	 * not meet the required prefix length
