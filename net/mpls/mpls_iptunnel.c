@@ -137,12 +137,16 @@ static int mpls_xmit(struct sk_buff *skb)
 
 	mpls_stats_inc_outucastpkts(out_dev, skb);
 
-	if (rt)
-		err = neigh_xmit(NEIGH_ARP_TABLE, out_dev, &rt->rt_gateway,
-				 skb);
-	else if (rt6)
+	if (rt) {
+		if (rt->rt_gw_family == AF_INET)
+			err = neigh_xmit(NEIGH_ARP_TABLE, out_dev, &rt->rt_gw4,
+					 skb);
+		else
+			err = -EAFNOSUPPORT;
+	} else if (rt6) {
 		err = neigh_xmit(NEIGH_ND_TABLE, out_dev, &rt6->rt6i_gateway,
 				 skb);
+	}
 	if (err)
 		net_dbg_ratelimited("%s: packet transmission failed: %d\n",
 				    __func__, err);

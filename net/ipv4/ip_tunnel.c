@@ -690,7 +690,10 @@ void ip_tunnel_xmit(struct sk_buff *skb, struct net_device *dev,
 		}
 		else if (skb->protocol == htons(ETH_P_IP)) {
 			rt = skb_rtable(skb);
-			dst = rt_nexthop(rt, inner_iph->daddr);
+			 if (rt && rt->rt_gw_family == AF_INET)
+				dst = rt->rt_gw4;
+			else
+				dst = inner_iph->daddr;
 		}
 #if IS_ENABLED(CONFIG_IPV6)
 		else if (skb->protocol == htons(ETH_P_IPV6)) {
