@@ -158,12 +158,12 @@ static void rt_fibinfo_free(struct rtable __rcu **rtp)
 	dst_release_immediate(&rt->dst);
 }
 
-static void free_nh_exceptions(struct fib_nh *nh)
+static void free_nh_exceptions(struct fib_nh_common *nhc)
 {
 	struct fnhe_hash_bucket *hash;
 	int i;
 
-	hash = rcu_dereference_protected(nh->nh_exceptions, 1);
+	hash = rcu_dereference_protected(nhc->nhc_exceptions, 1);
 	if (!hash)
 		return;
 	for (i = 0; i < FNHE_HASH_SIZE; i++) {
@@ -218,12 +218,14 @@ EXPORT_SYMBOL_GPL(fib_nh_common_release);
 
 void fib_nh_release(struct net *net, struct fib_nh *fib_nh)
 {
+	struct fib_nh_common *nhc = &fib_nh->nh_common;
+
 #ifdef CONFIG_IP_ROUTE_CLASSID
 	if (fib_nh->nh_tclassid)
 		net->ipv4.fib_num_tclassid_users--;
 #endif
-	fib_nh_common_release(&fib_nh->nh_common);
-	free_nh_exceptions(fib_nh);
+	fib_nh_common_release(nhc);
+	free_nh_exceptions(nhc);
 }
 
 /* Release a nexthop info record */
@@ -1511,10 +1513,11 @@ static int call_fib_nh_notifiers(struct fib_nh *nh,
  */
 static void nh_update_mtu(struct fib_nh *nh, u32 new, u32 orig)
 {
+	struct fib_nh_common *nhc = &nh->nh_common;
 	struct fnhe_hash_bucket *bucket;
 	int i;
 
-	bucket = rcu_dereference_protected(nh->nh_exceptions, 1);
+	bucket = rcu_dereference_protected(nhc->nhc_exceptions, 1);
 	if (!bucket)
 		return;
 

@@ -109,7 +109,6 @@ struct fib_nh {
 #endif
 	__be32			nh_saddr;
 	int			nh_saddr_genid;
-	struct fnhe_hash_bucket	__rcu *nh_exceptions;
 #define fib_nh_family		nh_common.nhc_family
 #define fib_nh_dev		nh_common.nhc_dev
 #define fib_nh_oif		nh_common.nhc_oif

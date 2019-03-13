@@ -632,10 +632,10 @@ static void fill_route_from_fnhe(struct rtable *rt, struct fib_nh_exception *fnh
 	}
 }
 
-static void update_or_create_fnhe(struct fib_nh *nh, __be32 daddr, __be32 gw,
-				  u32 pmtu, bool lock, unsigned long expires)
+static void update_or_create_fnhe(struct fib_nh_common *nhc, __be32 daddr,
+				  __be32 gw, u32 pmtu, bool lock,
+				  unsigned long expires)
 {
-	struct fib_nh_common *nhc = &nh->nh_common;
 	struct fnhe_hash_bucket *hash;
 	struct fib_nh_exception *fnhe;
 	struct rtable *rt;
@@ -643,17 +643,20 @@ static void update_or_create_fnhe(struct fib_nh *nh, __be32 daddr, __be32 gw,
 	unsigned int i;
 	int depth;
 
-	genid = fnhe_genid(dev_net(nh->fib_nh_dev));
+	if (nhc->nhc_family != AF_INET)
+		return;
+
+	genid = fnhe_genid(dev_net(nhc->nhc_dev));
 	hval = fnhe_hashfun(daddr);
 
 	spin_lock_bh(&fnhe_lock);
 
-	hash = rcu_dereference(nh->nh_exceptions);
+	hash = rcu_dereference(nhc->nhc_exceptions);
 	if (!hash) {
 		hash = kcalloc(FNHE_HASH_SIZE, sizeof(*hash), GFP_ATOMIC);
 		if (!hash)
 			goto out_unlock;
-		rcu_assign_pointer(nh->nh_exceptions, hash);
+		rcu_assign_pointer(nhc->nhc_exceptions, hash);
 	}
 
 	hash += hval;
@@ -776,15 +779,10 @@ static void __ip_do_redirect(struct rtable *rt, struct sk_buff *skb, struct flow
 		if (!(n->nud_state & NUD_VALID)) {
 			neigh_event_send(n, NULL);
 		} else {
-			if (fib_lookup(net, fl4, &res, 0) == 0) {
-				struct fib_nh_common *nhc = FIB_RES_NH(res);
-				struct fib_nh *nh;
-
-				nh = container_of(nhc, struct fib_nh, nh_common);
-				update_or_create_fnhe(nh, fl4->daddr, new_gw,
-						0, false,
+			if (fib_lookup(net, fl4, &res, 0) == 0)
+				update_or_create_fnhe(FIB_RES_NH(res),
+						fl4->daddr, new_gw, 0, false,
 						jiffies + ip_rt_gc_timeout);
-			}
 			if (kill_route)
 				rt->dst.obsolete = DST_OBSOLETE_KILL;
 			call_netevent_notifiers(NETEVENT_NEIGH_UPDATE, n);
@@ -1027,14 +1025,9 @@ static void __ip_rt_update_pmtu(struct rtable *rt, struct flowi4 *fl4, u32 mtu)
 		return;
 
 	rcu_read_lock();
-	if (fib_lookup(dev_net(dst->dev), fl4, &res, 0) == 0) {
-		struct fib_nh_common *nhc = FIB_RES_NH(res);
-		struct fib_nh *nh;
-
-		nh = container_of(nhc, struct fib_nh, nh_common);
-		update_or_create_fnhe(nh, fl4->daddr, 0, mtu, lock,
+	if (fib_lookup(dev_net(dst->dev), fl4, &res, 0) == 0)
+		update_or_create_fnhe(FIB_RES_NH(res), fl4->daddr, 0, mtu, lock,
 				      jiffies + ip_rt_mtu_expires);
-	}
 	rcu_read_unlock();
 }
 
@@ -1290,7 +1283,7 @@ static unsigned int ipv4_mtu(const struct dst_entry *dst)
 	return mtu - lwtunnel_headroom(dst->lwtstate, mtu);
 }
 
-static void ip_del_fnhe(struct fib_nh *nh, __be32 daddr)
+static void ip_del_fnhe(struct fib_nh_common *nhc, __be32 daddr)
 {
 	struct fnhe_hash_bucket *hash;
 	struct fib_nh_exception *fnhe, __rcu **fnhe_p;
@@ -1298,7 +1291,7 @@ static void ip_del_fnhe(struct fib_nh *nh, __be32 daddr)
 
 	spin_lock_bh(&fnhe_lock);
 
-	hash = rcu_dereference_protected(nh->nh_exceptions,
+	hash = rcu_dereference_protected(nhc->nhc_exceptions,
 					 lockdep_is_held(&fnhe_lock));
 	hash += hval;
 
@@ -1320,12 +1313,17 @@ static void ip_del_fnhe(struct fib_nh *nh, __be32 daddr)
 	spin_unlock_bh(&fnhe_lock);
 }
 
-static struct fib_nh_exception *find_exception(struct fib_nh *nh, __be32 daddr)
+static struct fib_nh_exception *find_exception(struct fib_nh_common *nhc,
+					       __be32 daddr)
 {
-	struct fnhe_hash_bucket *hash = rcu_dereference(nh->nh_exceptions);
+	struct fnhe_hash_bucket *hash;
 	struct fib_nh_exception *fnhe;
 	u32 hval;
 
+	if (nhc->nhc_family != AF_INET)
+		return NULL;
+
+	hash = rcu_dereference(nhc->nhc_exceptions);
 	if (!hash)
 		return NULL;
 
@@ -1336,7 +1334,7 @@ static struct fib_nh_exception *find_exception(struct fib_nh *nh, __be32 daddr)
 		if (fnhe->fnhe_daddr == daddr) {
 			if (fnhe->fnhe_expires &&
 			    time_after(jiffies, fnhe->fnhe_expires)) {
-				ip_del_fnhe(nh, daddr);
+				ip_del_fnhe(nhc, daddr);
 				break;
 			}
 			return fnhe;
@@ -1363,10 +1361,9 @@ u32 ip_mtu_from_fib_result(struct fib_result *res, __be32 daddr)
 		mtu = fi->fib_mtu;
 
 	if (likely(!mtu)) {
-		struct fib_nh *nh = container_of(nhc, struct fib_nh, nh_common);
 		struct fib_nh_exception *fnhe;
 
-		fnhe = find_exception(nh, daddr);
+		fnhe = find_exception(nhc, daddr);
 		if (fnhe && !time_after_eq(jiffies, fnhe->fnhe_expires))
 			mtu = fnhe->fnhe_pmtu;
 	}
@@ -1425,9 +1422,8 @@ static bool rt_bind_exception(struct rtable *rt, struct fib_nh_exception *fnhe,
 	return ret;
 }
 
-static bool rt_cache_route(struct fib_nh *nh, struct rtable *rt)
+static bool rt_cache_route(struct fib_nh_common *nhc, struct rtable *rt)
 {
-	struct fib_nh_common *nhc = &nh->nh_common;
 	struct rtable *orig, *prev, **p;
 	bool ret = true;
 
@@ -1531,22 +1527,28 @@ static void rt_set_nexthop(struct rtable *rt, __be32 daddr,
 
 	if (fi) {
 		struct fib_nh_common *nhc = FIB_RES_NH(*res);
-		struct fib_nh *nh = container_of(nhc, struct fib_nh, nh_common);
 
-		if (nh->fib_nh_gw4 && nh->fib_nh_scope == RT_SCOPE_LINK) {
-			rt->rt_gateway = nh->fib_nh_gw4;
+		if (nhc->nhc_gw.ipv4 && nhc->nhc_scope == RT_SCOPE_LINK) {
+			rt->rt_gateway = nhc->nhc_gw.ipv4;
 			rt->rt_uses_gateway = 1;
 		}
 		ip_dst_init_metrics(&rt->dst, fi->fib_metrics);
 
 #ifdef CONFIG_IP_ROUTE_CLASSID
-		rt->dst.tclassid = nh->nh_tclassid;
+		if (nhc->nhc_family == AF_INET) {
+			struct fib_nh *nh;
+
+			nh = container_of(nhc, struct fib_nh, nh_common);
+			rt->dst.tclassid = nh->nh_tclassid;
+		}
 #endif
-		rt->dst.lwtstate = lwtstate_get(nh->fib_nh_lws);
+
+		rt->dst.lwtstate = lwtstate_get(nhc->nhc_lwtstate);
 		if (unlikely(fnhe))
 			cached = rt_bind_exception(rt, fnhe, daddr, do_cache);
 		else if (do_cache)
-			cached = rt_cache_route(nh, rt);
+			cached = rt_cache_route(nhc, rt);
+
 		if (unlikely(!cached)) {
 			/* Routes we intend to cache in nexthop exception or
 			 * FIB nexthop have the DST_NOCACHE bit clear.
@@ -1703,9 +1705,8 @@ static int __mkroute_input(struct sk_buff *skb,
 {
 	struct fib_nh_common *nhc = FIB_RES_NH(*res);
 	struct net_device *dev = nhc->nhc_dev;
-	struct fib_nh_exception *fnhe;
+	struct fib_nh_exception *fnhe = NULL;
 	struct rtable *rth;
-	struct fib_nh *nh;
 	int err;
 	struct in_device *out_dev;
 	bool do_cache;
@@ -1752,8 +1753,7 @@ static int __mkroute_input(struct sk_buff *skb,
 		}
 	}
 
-	nh = container_of(nhc, struct fib_nh, nh_common);
-	fnhe = find_exception(nh, daddr);
+	fnhe = find_exception(nhc, daddr);
 	if (do_cache) {
 		if (fnhe)
 			rth = rcu_dereference(fnhe->fnhe_rth_input);
@@ -2083,7 +2083,6 @@ local_input:
 
 	if (do_cache) {
 		struct fib_nh_common *nhc = FIB_RES_NH(*res);
-		struct fib_nh *nh;
 
 		rth->dst.lwtstate = lwtstate_get(nhc->nhc_lwtstate);
 		if (lwtunnel_input_redirect(rth->dst.lwtstate)) {
@@ -2092,8 +2091,7 @@ local_input:
 			rth->dst.input = lwtunnel_input;
 		}
 
-		nh = container_of(nhc, struct fib_nh, nh_common);
-		if (unlikely(!rt_cache_route(nh, rth)))
+		if (unlikely(!rt_cache_route(nhc, rth)))
 			rt_add_uncached_list(rth);
 	}
 	skb_dst_set(skb, &rth->dst);
@@ -2265,10 +2263,8 @@ static struct rtable *__mkroute_output(const struct fib_result *res,
 	if (fi) {
 		struct fib_nh_common *nhc = FIB_RES_NH(*res);
 		struct rtable __rcu **prth;
-		struct fib_nh *nh;
 
-		nh = container_of(nhc, struct fib_nh, nh_common);
-		fnhe = find_exception(nh, fl4->daddr);
+		fnhe = find_exception(nhc, fl4->daddr);
 		if (!do_cache)
 			goto add;
 		if (fnhe) {
