@@ -167,7 +167,7 @@ eafnosupport_fib6_select_path(const struct net *net, struct fib6_result *res,
 }
 
 static u32
-eafnosupport_ip6_mtu_from_fib6(struct fib6_info *f6i, struct in6_addr *daddr,
+eafnosupport_ip6_mtu_from_fib6(struct fib6_result *res, struct in6_addr *daddr,
 			       struct in6_addr *saddr)
 {
 	return 0;

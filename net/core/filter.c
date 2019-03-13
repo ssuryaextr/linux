@@ -4678,7 +4678,7 @@ static int bpf_ipv6_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 				    NULL, strict);
 
 	if (check_mtu) {
-		mtu = ipv6_stub->ip6_mtu_from_fib6(res.f6i, dst, src);
+		mtu = ipv6_stub->ip6_mtu_from_fib6(&res, dst, src);
 		if (params->tot_len > mtu)
 			return BPF_FIB_LKUP_RET_FRAG_NEEDED;
 	}
