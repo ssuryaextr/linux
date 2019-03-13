@@ -432,9 +432,23 @@ void rt6_get_prefsrc(const struct rt6_info *rt, struct in6_addr *addr)
 	rcu_read_unlock();
 }
 
-static inline struct net_device *fib6_info_nh_dev(const struct fib6_info *f6i)
+static inline struct fib6_nh *fib6_info_nh(struct fib6_info *f6i)
 {
-	return f6i->fib6_nh->fib_nh_dev;
+	return f6i->fib6_nh;
+}
+
+static inline bool fib6_info_has_gw(struct fib6_info *f6i)
+{
+	const struct fib6_nh *nh = fib6_info_nh(f6i);
+
+	return nh->fib_nh_has_gw;
+}
+
+static inline struct net_device *fib6_info_nh_dev(struct fib6_info *f6i)
+{
+	const struct fib6_nh *nh = fib6_info_nh(f6i);
+
+	return nh->fib_nh_dev;
 }
 
 int fib6_nh_init(struct net *net, struct fib6_nh *fib6_nh,
@@ -443,9 +457,11 @@ int fib6_nh_init(struct net *net, struct fib6_nh *fib6_nh,
 void fib6_nh_release(struct fib6_nh *fib6_nh);
 
 static inline
-struct lwtunnel_state *fib6_info_nh_lwt(const struct fib6_info *f6i)
+struct lwtunnel_state *fib6_info_nh_lwt(struct fib6_info *f6i)
 {
-	return f6i->fib6_nh->fib_nh_lws;
+	struct fib6_nh *nh = fib6_info_nh(f6i);
+
+	return nh->fib_nh_lws;
 }
 
 void inet6_rt_notify(int event, struct fib6_info *rt, struct nl_info *info,

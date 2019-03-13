@@ -36,7 +36,7 @@ TRACE_EVENT(fib6_table_lookup,
 	),
 
 	TP_fast_assign(
-		struct fib6_nh *nh = f6i->fib6_nh;
+		struct fib6_nh *nh = fib6_info_nh(f6i);
 		struct in6_addr *in6;
 
 		__entry->tb_id = table->tb6_id;

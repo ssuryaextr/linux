@@ -2290,7 +2290,7 @@ void fib6_gc_cleanup(void)
 static int ipv6_route_seq_show(struct seq_file *seq, void *v)
 {
 	struct fib6_info *rt = v;
-	struct fib6_nh *fib6_nh = rt->fib6_nh;
+	struct fib6_nh *fib6_nh = fib6_info_nh(rt);
 	struct ipv6_route_iter *iter = seq->private;
 	unsigned int flags = rt->fib6_flags;
 	const struct net_device *dev;
@@ -2302,14 +2302,14 @@ static int ipv6_route_seq_show(struct seq_file *seq, void *v)
 #else
 	seq_puts(seq, "00000000000000000000000000000000 00 ");
 #endif
-	if (rt->fib6_nh->fib_nh_has_gw) {
+	if (fib6_nh && fib6_nh->fib_nh_has_gw) {
 		flags |= RTF_GATEWAY;
 		seq_printf(seq, "%pi6", &fib6_nh->fib_nh_gw6);
 	} else {
 		seq_puts(seq, "00000000000000000000000000000000");
 	}
 
-	dev = fib6_nh->fib_nh_dev;
+	dev = fib6_nh ? fib6_nh->fib_nh_dev : NULL;
 	seq_printf(seq, " %08x %08x %08x %08x %8s\n",
 		   rt->fib6_metric, atomic_read(&rt->fib6_ref), 0,
 		   flags, dev ? dev->name : "");

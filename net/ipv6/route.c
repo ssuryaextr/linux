@@ -466,22 +466,25 @@ struct fib6_info *fib6_multipath_select(const struct net *net,
 
 static inline struct fib6_info *rt6_device_match(struct net *net,
 						 struct fib6_info *rt,
-						    const struct in6_addr *saddr,
-						    int oif,
-						    int flags)
+						 const struct in6_addr *saddr,
+						 int oif,
+						 int flags)
 {
+	const struct fib6_nh *nh = fib6_info_nh(rt);
 	struct fib6_info *sprt;
 
 	if (!oif && ipv6_addr_any(saddr) &&
-	    !(rt->fib6_nh->fib_nh_flags & RTNH_F_DEAD))
+	    !(nh->fib_nh_flags & RTNH_F_DEAD))
 		return rt;
 
 	for (sprt = rt; sprt; sprt = rcu_dereference(sprt->fib6_next)) {
-		const struct net_device *dev = sprt->fib6_nh->fib_nh_dev;
+		const struct fib6_nh *nh2 = fib6_info_nh(sprt);
+		const struct net_device *dev;
 
-		if (sprt->fib6_nh->fib_nh_flags & RTNH_F_DEAD)
+		if (nh2->fib_nh_flags & RTNH_F_DEAD)
 			continue;
 
+		dev = nh2->fib_nh_dev;
 		if (oif) {
 			if (dev->ifindex == oif)
 				return sprt;
@@ -495,7 +498,7 @@ static inline struct fib6_info *rt6_device_match(struct net *net,
 	if (oif && flags & RT6_LOOKUP_F_IFACE)
 		return net->ipv6.fib6_null_entry;
 
-	return rt->fib6_nh->fib_nh_flags & RTNH_F_DEAD ? net->ipv6.fib6_null_entry : rt;
+	return nh->fib_nh_flags & RTNH_F_DEAD ? net->ipv6.fib6_null_entry : rt;
 }
 
 #ifdef CONFIG_IPV6_ROUTER_PREF
@@ -521,6 +524,7 @@ static void rt6_probe(struct fib6_info *rt)
 {
 	struct __rt6_probe_work *work = NULL;
 	const struct in6_addr *nh_gw;
+	const struct fib6_nh *nh;
 	struct neighbour *neigh;
 	struct net_device *dev;
 	struct inet6_dev *idev;
@@ -533,11 +537,12 @@ static void rt6_probe(struct fib6_info *rt)
 	 * Router Reachability Probe MUST be rate-limited
 	 * to no more than one per minute.
 	 */
-	if (!rt || !rt->fib6_nh->fib_nh_has_gw)
+	if (!rt || !fib6_info_has_gw(rt))
 		return;
 
-	nh_gw = &rt->fib6_nh->fib_nh_gw6;
-	dev = rt->fib6_nh->fib_nh_dev;
+	nh = fib6_info_nh(rt);
+	nh_gw = &nh->fib_nh_gw6;
+	dev = nh->fib_nh_dev;
 	rcu_read_lock_bh();
 	idev = __in6_dev_get(dev);
 	neigh = __ipv6_neigh_lookup_noref(dev, nh_gw);
@@ -582,7 +587,8 @@ static inline void rt6_probe(struct fib6_info *rt)
  */
 static inline int rt6_check_dev(struct fib6_info *rt, int oif)
 {
-	const struct net_device *dev = rt->fib6_nh->fib_nh_dev;
+	const struct fib6_nh *nh = fib6_info_nh(rt);
+	const struct net_device *dev = nh->fib_nh_dev;
 
 	if (!oif || dev->ifindex == oif)
 		return 2;
@@ -591,16 +597,15 @@ static inline int rt6_check_dev(struct fib6_info *rt, int oif)
 
 static inline enum rt6_nud_state rt6_check_neigh(struct fib6_info *rt)
 {
+	const struct fib6_nh *nh = fib6_info_nh(rt);
 	enum rt6_nud_state ret = RT6_NUD_FAIL_HARD;
 	struct neighbour *neigh;
 
-	if (rt->fib6_flags & RTF_NONEXTHOP ||
-	    !rt->fib6_nh->fib_nh_has_gw)
+	if (rt->fib6_flags & RTF_NONEXTHOP || !nh->fib_nh_has_gw)
 		return RT6_NUD_SUCCEED;
 
 	rcu_read_lock_bh();
-	neigh = __ipv6_neigh_lookup_noref(rt->fib6_nh->fib_nh_dev,
-					  &rt->fib6_nh->fib_nh_gw6);
+	neigh = __ipv6_neigh_lookup_noref(nh->fib_nh_dev, &nh->fib_nh_gw6);
 	if (neigh) {
 		read_lock(&neigh->lock);
 		if (neigh->nud_state & NUD_VALID)
@@ -643,7 +648,7 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
 				   int *mpri, struct fib6_info *match,
 				   bool *do_rr)
 {
-	const struct fib6_nh *fib6_nh = rt->fib6_nh;
+	const struct fib6_nh *fib6_nh = fib6_info_nh(rt);
 	int m;
 	bool match_do_rr = false;
 
@@ -768,9 +773,9 @@ static struct fib6_info *rt6_select(struct net *net, struct fib6_node *fn,
 	return match ? match : net->ipv6.fib6_null_entry;
 }
 
-static bool rt6_is_gw_or_nonexthop(const struct fib6_info *rt)
+static bool rt6_is_gw_or_nonexthop(struct fib6_info *rt)
 {
-	return (rt->fib6_flags & RTF_NONEXTHOP) || rt->fib6_nh->fib_nh_has_gw;
+	return (rt->fib6_flags & RTF_NONEXTHOP) || fib6_info_has_gw(rt);
 }
 
 #ifdef CONFIG_IPV6_ROUTE_INFO
@@ -856,7 +861,8 @@ int rt6_route_rcv(struct net_device *dev, u8 *opt, int len,
 /* called with rcu_lock held */
 static struct net_device *ip6_rt_get_dev_rcu(struct fib6_info *rt)
 {
-	struct net_device *dev = rt->fib6_nh->fib_nh_dev;
+	const struct fib6_nh *nh = fib6_info_nh(rt);
+	struct net_device *dev = nh->fib_nh_dev;
 
 	if (rt->fib6_flags & (RTF_LOCAL | RTF_ANYCAST)) {
 		/* for copies of local routes, dst->dev needs to be the
@@ -934,6 +940,8 @@ static void ip6_rt_init_dst_reject(struct rt6_info *rt, struct fib6_info *ort)
 
 static void ip6_rt_init_dst(struct rt6_info *rt, struct fib6_info *ort)
 {
+	struct lwtunnel_state *lws;
+
 	if (ort->fib6_flags & RTF_REJECT) {
 		ip6_rt_init_dst_reject(rt, ort);
 		return;
@@ -950,8 +958,9 @@ static void ip6_rt_init_dst(struct rt6_info *rt, struct fib6_info *ort)
 		rt->dst.input = ip6_forward;
 	}
 
-	if (ort->fib6_nh->fib_nh_lws) {
-		rt->dst.lwtstate = lwtstate_get(ort->fib6_nh->fib_nh_lws);
+	lws = fib6_info_nh_lwt(ort);
+	if (lws) {
+		rt->dst.lwtstate = lwtstate_get(lws);
 		lwtunnel_set_redirect(&rt->dst);
 	}
 
@@ -969,15 +978,16 @@ static void rt6_set_from(struct rt6_info *rt, struct fib6_info *from)
 /* Caller must already hold reference to @ort */
 static void ip6_rt_copy_init(struct rt6_info *rt, struct fib6_info *ort)
 {
-	struct net_device *dev = fib6_info_nh_dev(ort);
+	const struct fib6_nh *nh = fib6_info_nh(ort);
+	struct net_device *dev = nh->fib_nh_dev;
 
 	ip6_rt_init_dst(rt, ort);
 
 	rt->rt6i_dst = ort->fib6_dst;
 	rt->rt6i_idev = dev ? in6_dev_get(dev) : NULL;
 	rt->rt6i_flags = ort->fib6_flags;
-	if (ort->fib6_nh->fib_nh_has_gw) {
-		rt->rt6i_gateway = ort->fib6_nh->fib_nh_gw6;
+	if (nh->fib_nh_has_gw) {
+		rt->rt6i_gateway = nh->fib_nh_gw6;
 		rt->rt6i_flags |= RTF_GATEWAY;
 	}
 	rt6_set_from(rt, ort);
@@ -1024,7 +1034,7 @@ static bool ip6_hold_safe(struct net *net, struct rt6_info **prt)
 static struct rt6_info *ip6_create_rt_rcu(struct fib6_info *rt)
 {
 	unsigned short flags = fib6_info_dst_flags(rt);
-	struct net_device *dev = rt->fib6_nh->fib_nh_dev;
+	struct net_device *dev = fib6_info_nh_dev(rt);
 	struct rt6_info *nrt;
 
 	if (!fib6_info_hold_safe(rt))
@@ -1388,31 +1398,32 @@ __rt6_find_exception_rcu(struct rt6_exception_bucket **bucket,
 	return NULL;
 }
 
-static unsigned int fib6_mtu(const struct fib6_info *rt)
+static unsigned int fib6_mtu(struct fib6_info *rt)
 {
+	const struct fib6_nh *nh = fib6_info_nh(rt);
 	unsigned int mtu;
 
 	if (rt->fib6_pmtu) {
 		mtu = rt->fib6_pmtu;
 	} else {
-		struct net_device *dev = fib6_info_nh_dev(rt);
 		struct inet6_dev *idev;
 
 		rcu_read_lock();
-		idev = __in6_dev_get(dev);
+		idev = __in6_dev_get(nh->fib_nh_dev);
 		mtu = idev->cnf.mtu6;
 		rcu_read_unlock();
 	}
 
 	mtu = min_t(unsigned int, mtu, IP6_MAX_MTU);
 
-	return mtu - lwtunnel_headroom(rt->fib6_nh->fib_nh_lws, mtu);
+	return mtu - lwtunnel_headroom(nh->fib_nh_lws, mtu);
 }
 
 static int rt6_insert_exception(struct rt6_info *nrt,
 				struct fib6_info *ort)
 {
-	struct fib_nh_common *nhc = &ort->fib6_nh->nh_common;
+	struct fib6_nh *nh = fib6_info_nh(ort);
+	struct fib_nh_common *nhc = &nh->nh_common;
 	struct net *net = dev_net(nrt->dst.dev);
 	struct rt6_exception_bucket *bucket;
 	struct in6_addr *src_key = NULL;
@@ -1524,7 +1535,9 @@ out:
 
 void rt6_flush_exceptions(struct fib6_info *f6i)
 {
-	fib6_nh_flush_exceptions(f6i->fib6_nh, f6i);
+	struct fib6_nh *nh = fib6_info_nh(f6i);
+
+	fib6_nh_flush_exceptions(nh, f6i);
 }
 
 /* Find cached rt in the hash table inside passed in rt
@@ -1534,7 +1547,8 @@ static struct rt6_info *rt6_find_cached_rt(struct fib6_info *rt,
 					   struct in6_addr *daddr,
 					   struct in6_addr *saddr)
 {
-	struct fib_nh_common *nhc = &rt->fib6_nh->nh_common;
+	struct fib6_nh *nh = fib6_info_nh(rt);
+	struct fib_nh_common *nhc = &nh->nh_common;
 	struct rt6_exception_bucket *bucket;
 	struct in6_addr *src_key = NULL;
 	struct rt6_exception *rt6_ex;
@@ -1607,7 +1621,7 @@ static int rt6_remove_exception_rt(struct rt6_info *rt)
 	if (!from || !(rt->rt6i_flags & RTF_CACHE))
 		return -EINVAL;
 
-	nh = from->fib6_nh;
+	nh = fib6_info_nh(from);
 	return fib6_nh_remove_exception(nh, from->fib6_src.plen, rt);
 }
 
@@ -1650,7 +1664,7 @@ static void rt6_update_exception_stamp_rt(struct rt6_info *rt)
 	if (!from || !(rt->rt6i_flags & RTF_CACHE))
 		goto unlock;
 
-	nh = from->fib6_nh;
+	nh = fib6_info_nh(from);
 	fib6_nh_update_exception(nh, from->fib6_src.plen, rt);
 unlock:
 	rcu_read_unlock();
@@ -1681,7 +1695,7 @@ static bool rt6_mtu_change_route_allowed(struct inet6_dev *idev,
 static void rt6_exceptions_update_pmtu(struct inet6_dev *idev,
 				       struct fib6_info *rt, int mtu)
 {
-	struct fib6_nh *nh = rt->fib6_nh;
+	struct fib6_nh *nh = fib6_info_nh(rt);
 	struct fib_nh_common *nhc = &nh->nh_common;
 	struct rt6_exception_bucket *bucket;
 	struct rt6_exception *rt6_ex;
@@ -1714,7 +1728,7 @@ static void rt6_exceptions_update_pmtu(struct inet6_dev *idev,
 static void rt6_exceptions_clean_tohost(struct fib6_info *rt,
 					struct in6_addr *gateway)
 {
-	struct fib6_nh *nh = rt->fib6_nh;
+	struct fib6_nh *nh = fib6_info_nh(rt);
 	struct fib_nh_common *nhc = &nh->nh_common;
 	struct rt6_exception_bucket *bucket;
 	struct rt6_exception *rt6_ex;
@@ -1804,7 +1818,7 @@ void rt6_age_exceptions(struct fib6_info *rt,
 
 	rcu_read_lock_bh();
 
-	nh = rt->fib6_nh;
+	nh = fib6_info_nh(rt);
 	if (!rcu_access_pointer(nh->nh_common.nhc_exceptions))
 		goto out;
 
@@ -1894,7 +1908,7 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
 		rcu_read_unlock();
 		return rt;
 	} else if (unlikely((fl6->flowi6_flags & FLOWI_FLAG_KNOWN_NH) &&
-			    !f6i->fib6_nh->fib_nh_has_gw)) {
+			    !fib6_info_has_gw(f6i))) {
 		/* Create a RTF_CACHE clone which will not be
 		 * owned by the fib6 tree.  It is for the special case where
 		 * the daddr in the skb during the neighbor look-up is different
@@ -2458,7 +2472,7 @@ static struct rt6_info *__ip6_route_redirect(struct net *net,
 	fn = fib6_node_lookup(&table->tb6_root, &fl6->daddr, &fl6->saddr);
 restart:
 	for_each_fib6_node_rt_rcu(fn) {
-		struct fib6_nh *nh = rt->fib6_nh;
+		struct fib6_nh *nh = fib6_info_nh(rt);
 
 		if (nh->fib_nh_flags & RTNH_F_DEAD)
 			continue;
@@ -2466,7 +2480,7 @@ restart:
 			continue;
 		if (rt->fib6_flags & RTF_REJECT)
 			break;
-		if (!rt->fib6_nh->fib_nh_has_gw)
+		if (!nh->fib_nh_has_gw)
 			continue;
 		if (fl6->flowi6_oif != nh->fib_nh_dev->ifindex)
 			continue;
@@ -2632,7 +2646,8 @@ out:
 u32 ip6_mtu_from_fib6(struct fib6_info *f6i, struct in6_addr *daddr,
 		      struct in6_addr *saddr)
 {
-	struct fib_nh_common *nhc = &f6i->fib6_nh->nh_common;
+	struct fib6_nh *nh = fib6_info_nh(f6i);
+	struct fib_nh_common *nhc = &nh->nh_common;
 	struct rt6_exception_bucket *bucket;
 	struct rt6_exception *rt6_ex;
 	struct in6_addr *src_key;
@@ -3504,11 +3519,13 @@ static struct fib6_info *rt6_get_route_info(struct net *net,
 		goto out;
 
 	for_each_fib6_node_rt_rcu(fn) {
-		if (rt->fib6_nh->fib_nh_dev->ifindex != ifindex)
+		const struct fib6_nh *nh = fib6_info_nh(rt);
+
+		if (nh->fib_nh_dev->ifindex != ifindex)
 			continue;
-		if (!(rt->fib6_flags & RTF_ROUTEINFO) || !rt->fib6_nh->fib_nh_has_gw)
+		if (!(rt->fib6_flags & RTF_ROUTEINFO) || !nh->fib_nh_has_gw)
 			continue;
-		if (!ipv6_addr_equal(&rt->fib6_nh->fib_nh_gw6, gwaddr))
+		if (!ipv6_addr_equal(&nh->fib_nh_gw6, gwaddr))
 			continue;
 		if (!fib6_info_hold_safe(rt))
 			continue;
@@ -3806,8 +3823,9 @@ static int fib6_remove_prefsrc(struct fib6_info *rt, void *arg)
 	struct net_device *dev = ((struct arg_dev_net_ip *)arg)->dev;
 	struct net *net = ((struct arg_dev_net_ip *)arg)->net;
 	struct in6_addr *addr = ((struct arg_dev_net_ip *)arg)->addr;
+	const struct fib6_nh *nh = fib6_info_nh(rt);
 
-	if (((void *)rt->fib6_nh->fib_nh_dev == dev || !dev) &&
+	if ((nh->fib_nh_dev == dev || !dev) &&
 	    rt != net->ipv6.fib6_null_entry &&
 	    ipv6_addr_equal(addr, &rt->fib6_prefsrc.addr)) {
 		spin_lock_bh(&rt6_exception_lock);
@@ -3835,10 +3853,10 @@ void rt6_remove_prefsrc(struct inet6_ifaddr *ifp)
 static int fib6_clean_tohost(struct fib6_info *rt, void *arg)
 {
 	struct in6_addr *gateway = (struct in6_addr *)arg;
+	const struct fib6_nh *nh = fib6_info_nh(rt);
 
 	if (((rt->fib6_flags & RTF_RA_ROUTER) == RTF_RA_ROUTER) &&
-	    rt->fib6_nh->fib_nh_has_gw &&
-	    ipv6_addr_equal(gateway, &rt->fib6_nh->fib_nh_gw6)) {
+	    nh->fib_nh_has_gw && ipv6_addr_equal(gateway, &nh->fib_nh_gw6)) {
 		return -1;
 	}
 
@@ -3884,9 +3902,9 @@ static struct fib6_info *rt6_multipath_first_sibling(const struct fib6_info *rt)
 	return NULL;
 }
 
-static bool rt6_is_dead(const struct fib6_info *rt)
+static bool rt6_is_dead(struct fib6_info *rt)
 {
-	const struct fib6_nh *fib6_nh = rt->fib6_nh;
+	const struct fib6_nh *fib6_nh = fib6_info_nh(rt);
 
 	if (fib6_nh->fib_nh_flags & RTNH_F_DEAD ||
 	    (fib6_nh->fib_nh_flags & RTNH_F_LINKDOWN &&
@@ -3896,17 +3914,20 @@ static bool rt6_is_dead(const struct fib6_info *rt)
 	return false;
 }
 
-static int rt6_multipath_total_weight(const struct fib6_info *rt)
+static int rt6_multipath_total_weight(struct fib6_info *rt)
 {
+	const struct fib6_nh *fib6_nh = fib6_info_nh(rt);
 	struct fib6_info *iter;
 	int total = 0;
 
 	if (!rt6_is_dead(rt))
-		total += rt->fib6_nh->fib_nh_weight;
+		total += fib6_nh->fib_nh_weight;
 
 	list_for_each_entry(iter, &rt->fib6_siblings, fib6_siblings) {
-		if (!rt6_is_dead(iter))
-			total += iter->fib6_nh->fib_nh_weight;
+		if (!rt6_is_dead(iter)) {
+			fib6_nh = fib6_info_nh(iter);
+			total += fib6_nh->fib_nh_weight;
+		}
 	}
 
 	return total;
@@ -3914,14 +3935,15 @@ static int rt6_multipath_total_weight(const struct fib6_info *rt)
 
 static void rt6_upper_bound_set(struct fib6_info *rt, int *weight, int total)
 {
+	struct fib6_nh *fib6_nh = fib6_info_nh(rt);
 	int upper_bound = -1;
 
 	if (!rt6_is_dead(rt)) {
-		*weight += rt->fib6_nh->fib_nh_weight;
+		*weight += fib6_nh->fib_nh_weight;
 		upper_bound = DIV_ROUND_CLOSEST_ULL((u64) (*weight) << 31,
 						    total) - 1;
 	}
-	atomic_set(&rt->fib6_nh->fib_nh_upper_bound, upper_bound);
+	atomic_set(&fib6_nh->fib_nh_upper_bound, upper_bound);
 }
 
 static void rt6_multipath_upper_bound_set(struct fib6_info *rt, int total)
@@ -3962,11 +3984,12 @@ void rt6_multipath_rebalance(struct fib6_info *rt)
 static int fib6_ifup(struct fib6_info *rt, void *p_arg)
 {
 	const struct arg_netdev_event *arg = p_arg;
+	struct fib6_nh *nh = fib6_info_nh(rt);
 	struct net *net = dev_net(arg->dev);
 
 	if (rt != net->ipv6.fib6_null_entry &&
-	    rt->fib6_nh->fib_nh_dev == arg->dev) {
-		rt->fib6_nh->fib_nh_flags &= ~arg->nh_flags;
+	    nh->fib_nh_dev == arg->dev) {
+		nh->fib_nh_flags &= ~arg->nh_flags;
 		fib6_update_sernum_upto_root(net, rt);
 		rt6_multipath_rebalance(rt);
 	}
@@ -3989,17 +4012,19 @@ void rt6_sync_up(struct net_device *dev, unsigned int nh_flags)
 	fib6_clean_all(dev_net(dev), fib6_ifup, &arg);
 }
 
-static bool rt6_multipath_uses_dev(const struct fib6_info *rt,
+static bool rt6_multipath_uses_dev(struct fib6_info *rt,
 				   const struct net_device *dev)
 {
+	struct fib6_nh *nh = fib6_info_nh(rt);
 	struct fib6_info *iter;
 
-	if (rt->fib6_nh->fib_nh_dev == dev)
+	if (nh->fib_nh_dev == dev)
 		return true;
-	list_for_each_entry(iter, &rt->fib6_siblings, fib6_siblings)
-		if (iter->fib6_nh->fib_nh_dev == dev)
+	list_for_each_entry(iter, &rt->fib6_siblings, fib6_siblings) {
+		nh = fib6_info_nh(iter);
+		if (nh->fib_nh_dev == dev)
 			return true;
-
+	}
 	return false;
 }
 
@@ -4012,19 +4037,22 @@ static void rt6_multipath_flush(struct fib6_info *rt)
 		iter->should_flush = 1;
 }
 
-static unsigned int rt6_multipath_dead_count(const struct fib6_info *rt,
+static unsigned int rt6_multipath_dead_count(struct fib6_info *rt,
 					     const struct net_device *down_dev)
 {
+	struct fib6_nh *nh = fib6_info_nh(rt);
 	struct fib6_info *iter;
 	unsigned int dead = 0;
 
-	if (rt->fib6_nh->fib_nh_dev == down_dev ||
-	    rt->fib6_nh->fib_nh_flags & RTNH_F_DEAD)
+	if (nh->fib_nh_dev == down_dev ||
+	    nh->fib_nh_flags & RTNH_F_DEAD)
 		dead++;
-	list_for_each_entry(iter, &rt->fib6_siblings, fib6_siblings)
-		if (iter->fib6_nh->fib_nh_dev == down_dev ||
-		    iter->fib6_nh->fib_nh_flags & RTNH_F_DEAD)
+	list_for_each_entry(iter, &rt->fib6_siblings, fib6_siblings) {
+		nh = fib6_info_nh(iter);
+		if (nh->fib_nh_dev == down_dev ||
+		    nh->fib_nh_flags & RTNH_F_DEAD)
 			dead++;
+	}
 
 	return dead;
 }
@@ -4033,13 +4061,16 @@ static void rt6_multipath_nh_flags_set(struct fib6_info *rt,
 				       const struct net_device *dev,
 				       unsigned int nh_flags)
 {
+	struct fib6_nh *nh = fib6_info_nh(rt);
 	struct fib6_info *iter;
 
-	if (rt->fib6_nh->fib_nh_dev == dev)
-		rt->fib6_nh->fib_nh_flags |= nh_flags;
-	list_for_each_entry(iter, &rt->fib6_siblings, fib6_siblings)
-		if (iter->fib6_nh->fib_nh_dev == dev)
-			iter->fib6_nh->fib_nh_flags |= nh_flags;
+	if (nh->fib_nh_dev == dev)
+		nh->fib_nh_flags |= nh_flags;
+	list_for_each_entry(iter, &rt->fib6_siblings, fib6_siblings) {
+		nh = fib6_info_nh(iter);
+		if (nh->fib_nh_dev == dev)
+			nh->fib_nh_flags |= nh_flags;
+	}
 }
 
 /* called with write lock held for table with rt */
@@ -4048,18 +4079,20 @@ static int fib6_ifdown(struct fib6_info *rt, void *p_arg)
 	const struct arg_netdev_event *arg = p_arg;
 	const struct net_device *dev = arg->dev;
 	struct net *net = dev_net(dev);
+	struct fib6_nh *nh;
 
 	if (rt == net->ipv6.fib6_null_entry)
 		return 0;
 
+	nh = fib6_info_nh(rt);
 	switch (arg->event) {
 	case NETDEV_UNREGISTER:
-		return rt->fib6_nh->fib_nh_dev == dev ? -1 : 0;
+		return nh->fib_nh_dev == dev ? -1 : 0;
 	case NETDEV_DOWN:
 		if (rt->should_flush)
 			return -1;
 		if (!rt->fib6_nsiblings)
-			return rt->fib6_nh->fib_nh_dev == dev ? -1 : 0;
+			return nh->fib_nh_dev == dev ? -1 : 0;
 		if (rt6_multipath_uses_dev(rt, dev)) {
 			unsigned int count;
 
@@ -4075,10 +4108,10 @@ static int fib6_ifdown(struct fib6_info *rt, void *p_arg)
 		}
 		return -2;
 	case NETDEV_CHANGE:
-		if (rt->fib6_nh->fib_nh_dev != dev ||
+		if (nh->fib_nh_dev != dev ||
 		    rt->fib6_flags & (RTF_LOCAL | RTF_ANYCAST))
 			break;
-		rt->fib6_nh->fib_nh_flags |= RTNH_F_LINKDOWN;
+		nh->fib_nh_flags |= RTNH_F_LINKDOWN;
 		rt6_multipath_rebalance(rt);
 		break;
 	}
@@ -4134,7 +4167,7 @@ static int rt6_mtu_change_route(struct fib6_info *rt, void *p_arg)
 	   Since RFC 1981 doesn't include administrative MTU increase
 	   update PMTU increase is a MUST. (i.e. jumbo frame)
 	 */
-	if (rt->fib6_nh->fib_nh_dev == arg->dev &&
+	if (fib6_info_nh_dev(rt) == arg->dev &&
 	    !fib6_metric_locked(rt, RTAX_MTU)) {
 		u32 mtu = rt->fib6_pmtu;
 
@@ -4586,13 +4619,14 @@ static int inet6_rtm_newroute(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 static size_t rt6_nlmsg_size(struct fib6_info *rt)
 {
+	struct lwtunnel_state *lws = fib6_info_nh_lwt(rt);
 	int nexthop_len = 0;
 
 	if (rt->fib6_nsiblings) {
 		nexthop_len = nla_total_size(0)	 /* RTA_MULTIPATH */
 			    + NLA_ALIGN(sizeof(struct rtnexthop))
 			    + nla_total_size(16) /* RTA_GATEWAY */
-			    + lwtunnel_get_encap_size(rt->fib6_nh->fib_nh_lws);
+			    + lwtunnel_get_encap_size(lws);
 
 		nexthop_len *= rt->fib6_nsiblings;
 	}
@@ -4610,7 +4644,7 @@ static size_t rt6_nlmsg_size(struct fib6_info *rt)
 	       + nla_total_size(sizeof(struct rta_cacheinfo))
 	       + nla_total_size(TCP_CA_NAME_MAX) /* RTAX_CC_ALGO */
 	       + nla_total_size(1) /* RTA_PREF */
-	       + lwtunnel_get_encap_size(rt->fib6_nh->fib_nh_lws)
+	       + lwtunnel_get_encap_size(lws)
 	       + nexthop_len;
 }
 
@@ -4769,10 +4803,12 @@ nla_put_failure:
 	return -EMSGSIZE;
 }
 
-static bool fib6_info_uses_dev(const struct fib6_info *f6i,
+static bool fib6_info_uses_dev(struct fib6_info *f6i,
 			       const struct net_device *dev)
 {
-	if (f6i->fib6_nh->fib_nh_dev == dev)
+	struct fib6_nh *nh = fib6_info_nh(f6i);
+
+	if (nh->fib_nh_dev == dev)
 		return true;
 
 	if (f6i->fib6_nsiblings) {
@@ -4780,7 +4816,8 @@ static bool fib6_info_uses_dev(const struct fib6_info *f6i,
 
 		list_for_each_entry_safe(sibling, next_sibling,
 					 &f6i->fib6_siblings, fib6_siblings) {
-			if (sibling->fib6_nh->fib_nh_dev == dev)
+			nh = fib6_info_nh(sibling);
+			if (nh->fib_nh_dev == dev)
 				return true;
 		}
 	}

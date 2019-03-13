@@ -4601,6 +4601,7 @@ static int bpf_ipv6_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 	struct net_device *dev;
 	struct inet6_dev *idev;
 	struct fib6_info *f6i;
+	struct fib6_nh *nh;
 	struct flowi6 fl6;
 	int strict = 0;
 	int oif;
@@ -4685,13 +4686,14 @@ static int bpf_ipv6_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 			return BPF_FIB_LKUP_RET_FRAG_NEEDED;
 	}
 
-	if (f6i->fib6_nh->fib_nh_lws)
+	nh = fib6_info_nh(f6i);
+	if (nh->fib_nh_lws)
 		return BPF_FIB_LKUP_RET_UNSUPP_LWT;
 
-	if (f6i->fib6_nh->fib_nh_has_gw)
-		*dst = f6i->fib6_nh->fib_nh_gw6;
+	if (nh->fib_nh_has_gw)
+		*dst = nh->fib_nh_gw6;
 
-	dev = f6i->fib6_nh->fib_nh_dev;
+	dev = nh->fib_nh_dev;
 	params->rt_metric = f6i->fib6_metric;
 
 	/* xdp and cls_bpf programs are run in RCU-bh so rcu_read_lock_bh is

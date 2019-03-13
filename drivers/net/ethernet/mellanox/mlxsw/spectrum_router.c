@@ -2873,7 +2873,7 @@ mlxsw_sp_nexthop6_group_cmp(const struct mlxsw_sp_nexthop_group *nh_grp,
 		return false;
 
 	list_for_each_entry(mlxsw_sp_rt6, &fib6_entry->rt6_list, list) {
-		struct fib6_nh *fib6_nh = mlxsw_sp_rt6->rt->fib6_nh;
+		struct fib6_nh *fib6_nh = fib6_info_nh(mlxsw_sp_rt6->rt);
 		struct in6_addr *gw;
 		int ifindex, weight;
 
@@ -2945,7 +2945,7 @@ mlxsw_sp_nexthop6_group_hash(struct mlxsw_sp_fib6_entry *fib6_entry, u32 seed)
 	struct net_device *dev;
 
 	list_for_each_entry(mlxsw_sp_rt6, &fib6_entry->rt6_list, list) {
-		dev = mlxsw_sp_rt6->rt->fib6_nh->fib_nh_dev;
+		dev = fib6_info_nh_dev(mlxsw_sp_rt6->rt);
 		val ^= dev->ifindex;
 	}
 
@@ -3946,10 +3946,11 @@ mlxsw_sp_rt6_nexthop(struct mlxsw_sp_nexthop_group *nh_grp,
 	for (i = 0; i < nh_grp->count; i++) {
 		struct mlxsw_sp_nexthop *nh = &nh_grp->nexthops[i];
 		struct fib6_info *rt = mlxsw_sp_rt6->rt;
+		struct fib6_nh *fib6_nh = fib6_info_nh(rt);
 
-		if (nh->rif && nh->rif->dev == rt->fib6_nh->fib_nh_dev &&
+		if (nh->rif && nh->rif->dev == fib6_nh->fib_nh_dev &&
 		    ipv6_addr_equal((const struct in6_addr *) &nh->gw_addr,
-				    &rt->fib6_nh->fib_nh_gw6))
+				    &fib6_nh->fib_nh_gw6))
 			return nh;
 		continue;
 	}
@@ -4008,14 +4009,19 @@ mlxsw_sp_fib6_entry_offload_set(struct mlxsw_sp_fib_entry *fib_entry)
 
 	if (fib_entry->type == MLXSW_SP_FIB_ENTRY_TYPE_LOCAL ||
 	    fib_entry->type == MLXSW_SP_FIB_ENTRY_TYPE_BLACKHOLE) {
-		list_first_entry(&fib6_entry->rt6_list, struct mlxsw_sp_rt6,
-				 list)->rt->fib6_nh->fib_nh_flags |= RTNH_F_OFFLOAD;
+		struct fib6_nh *fib6_nh;
+		struct fib6_info *rt;
+
+		rt = list_first_entry(&fib6_entry->rt6_list,
+				      struct mlxsw_sp_rt6, list)->rt;
+		fib6_nh = fib6_info_nh(rt);
+		fib6_nh->fib_nh_flags |= RTNH_F_OFFLOAD;
 		return;
 	}
 
 	list_for_each_entry(mlxsw_sp_rt6, &fib6_entry->rt6_list, list) {
 		struct mlxsw_sp_nexthop_group *nh_grp = fib_entry->nh_group;
-		struct fib6_nh *fib6_nh = mlxsw_sp_rt6->rt->fib6_nh;
+		struct fib6_nh *fib6_nh = fib6_info_nh(mlxsw_sp_rt6->rt);
 		struct mlxsw_sp_nexthop *nh;
 
 		nh = mlxsw_sp_rt6_nexthop(nh_grp, mlxsw_sp_rt6);
@@ -4035,9 +4041,9 @@ mlxsw_sp_fib6_entry_offload_unset(struct mlxsw_sp_fib_entry *fib_entry)
 	fib6_entry = container_of(fib_entry, struct mlxsw_sp_fib6_entry,
 				  common);
 	list_for_each_entry(mlxsw_sp_rt6, &fib6_entry->rt6_list, list) {
-		struct fib6_info *rt = mlxsw_sp_rt6->rt;
+		struct fib6_nh *fib6_nh = fib6_info_nh(mlxsw_sp_rt6->rt);
 
-		rt->fib6_nh->fib_nh_flags &= ~RTNH_F_OFFLOAD;
+		fib6_nh->fib_nh_flags &= ~RTNH_F_OFFLOAD;
 	}
 }
 
@@ -4971,10 +4977,10 @@ mlxsw_sp_fib6_entry_rt_find(const struct mlxsw_sp_fib6_entry *fib6_entry,
 }
 
 static bool mlxsw_sp_nexthop6_ipip_type(const struct mlxsw_sp *mlxsw_sp,
-					const struct fib6_info *rt,
+					struct fib6_info *rt,
 					enum mlxsw_sp_ipip_type *ret)
 {
-	const struct fib6_nh *fib6_nh = rt->fib6_nh;
+	const struct fib6_nh *fib6_nh = fib6_info_nh(rt);
 
 	return fib6_nh->fib_nh_dev &&
 	       mlxsw_sp_netdev_ipip_type(mlxsw_sp, fib6_nh->fib_nh_dev, ret);
@@ -4983,11 +4989,11 @@ static bool mlxsw_sp_nexthop6_ipip_type(const struct mlxsw_sp *mlxsw_sp,
 static int mlxsw_sp_nexthop6_type_init(struct mlxsw_sp *mlxsw_sp,
 				       struct mlxsw_sp_nexthop_group *nh_grp,
 				       struct mlxsw_sp_nexthop *nh,
-				       const struct fib6_info *rt)
+				       struct fib6_info *rt)
 {
+	struct net_device *dev = fib6_info_nh_dev(rt);
 	const struct mlxsw_sp_ipip_ops *ipip_ops;
 	struct mlxsw_sp_ipip_entry *ipip_entry;
-	struct net_device *dev = rt->fib6_nh->fib_nh_dev;
 	struct mlxsw_sp_rif *rif;
 	int err;
 
@@ -5028,13 +5034,14 @@ static void mlxsw_sp_nexthop6_type_fini(struct mlxsw_sp *mlxsw_sp,
 static int mlxsw_sp_nexthop6_init(struct mlxsw_sp *mlxsw_sp,
 				  struct mlxsw_sp_nexthop_group *nh_grp,
 				  struct mlxsw_sp_nexthop *nh,
-				  const struct fib6_info *rt)
+				  struct fib6_info *rt)
 {
-	struct net_device *dev = rt->fib6_nh->fib_nh_dev;
+	struct fib6_nh *fib6_nh = fib6_info_nh(rt);
+	struct net_device *dev = fib6_nh->fib_nh_dev;
 
 	nh->nh_grp = nh_grp;
-	nh->nh_weight = rt->fib6_nh->fib_nh_weight;
-	memcpy(&nh->gw_addr, &rt->fib6_nh->fib_nh_gw6, sizeof(nh->gw_addr));
+	nh->nh_weight = fib6_nh->fib_nh_weight;
+	memcpy(&nh->gw_addr, &fib6_nh->fib_nh_gw6, sizeof(nh->gw_addr));
 	mlxsw_sp_nexthop_counter_alloc(mlxsw_sp, nh);
 
 	list_add_tail(&nh->router_list_node, &mlxsw_sp->router->nexthop_list);
@@ -5055,7 +5062,7 @@ static void mlxsw_sp_nexthop6_fini(struct mlxsw_sp *mlxsw_sp,
 }
 
 static bool mlxsw_sp_rt6_is_gateway(const struct mlxsw_sp *mlxsw_sp,
-				    const struct fib6_info *rt)
+				    struct fib6_info *rt)
 {
 	return rt->fib6_flags & RTF_GATEWAY ||
 	       mlxsw_sp_nexthop6_ipip_type(mlxsw_sp, rt, NULL);
@@ -5240,7 +5247,7 @@ mlxsw_sp_fib6_entry_nexthop_del(struct mlxsw_sp *mlxsw_sp,
 
 static void mlxsw_sp_fib6_entry_type_set(struct mlxsw_sp *mlxsw_sp,
 					 struct mlxsw_sp_fib_entry *fib_entry,
-					 const struct fib6_info *rt)
+					 struct fib6_info *rt)
 {
 	/* Packets hitting RTF_REJECT routes need to be discarded by the
 	 * stack. We can rely on their destination device not having a
