@@ -159,12 +159,6 @@ struct fib6_info *fib6_info_alloc(gfp_t gfp_flags, bool with_fib6_nh)
 	if (!f6i)
 		return NULL;
 
-	f6i->rt6i_pcpu = alloc_percpu_gfp(struct rt6_info *, gfp_flags);
-	if (!f6i->rt6i_pcpu) {
-		kfree(f6i);
-		return NULL;
-	}
-
 	INIT_LIST_HEAD(&f6i->fib6_siblings);
 	atomic_inc(&f6i->fib6_ref);
 
@@ -176,25 +170,6 @@ void fib6_info_destroy_rcu(struct rcu_head *head)
 	struct fib6_info *f6i = container_of(head, struct fib6_info, rcu);
 
 	WARN_ON(f6i->fib6_node);
-
-	if (f6i->rt6i_pcpu) {
-		int cpu;
-
-		for_each_possible_cpu(cpu) {
-			struct rt6_info **ppcpu_rt;
-			struct rt6_info *pcpu_rt;
-
-			ppcpu_rt = per_cpu_ptr(f6i->rt6i_pcpu, cpu);
-			pcpu_rt = *ppcpu_rt;
-			if (pcpu_rt) {
-				dst_dev_put(&pcpu_rt->dst);
-				dst_release(&pcpu_rt->dst);
-				*ppcpu_rt = NULL;
-			}
-		}
-
-		free_percpu(f6i->rt6i_pcpu);
-	}
 
 	fib6_nh_release(f6i->fib6_nh);
 
@@ -899,10 +874,14 @@ insert_above:
 	return ln;
 }
 
-static void fib6_drop_pcpu_from(struct fib6_info *f6i,
-				const struct fib6_table *table)
+static void __fib6_drop_pcpu_from(struct fib6_nh *fib6_nh,
+				  const struct fib6_info *from,
+				  const struct fib6_table *table)
 {
 	int cpu;
+
+	if (!rcu_access_pointer(fib6_nh->rt6i_pcpu))
+		return;
 
 	/* release the reference to this fib entry from
 	 * all of its cached pcpu routes
@@ -911,17 +890,27 @@ static void fib6_drop_pcpu_from(struct fib6_info *f6i,
 		struct rt6_info **ppcpu_rt;
 		struct rt6_info *pcpu_rt;
 
-		ppcpu_rt = per_cpu_ptr(f6i->rt6i_pcpu, cpu);
+		ppcpu_rt = per_cpu_ptr(fib6_nh->rt6i_pcpu, cpu);
 		pcpu_rt = *ppcpu_rt;
-		if (pcpu_rt) {
-			struct fib6_info *from;
+		if (pcpu_rt &&
+		    (!from || rcu_access_pointer(pcpu_rt->from) == from)) {
+			struct fib6_info *pfrom;
 
-			from = rcu_dereference_protected(pcpu_rt->from,
+			pfrom = rcu_dereference_protected(pcpu_rt->from,
 					     lockdep_is_held(&table->tb6_lock));
 			rcu_assign_pointer(pcpu_rt->from, NULL);
-			fib6_info_release(from);
+			fib6_info_release(pfrom);
 		}
 	}
+}
+
+static void fib6_drop_pcpu_from(struct fib6_info *f6i,
+				const struct fib6_table *table)
+{
+	struct fib6_nh *fib6_nh;
+
+	fib6_nh = fib6_info_nh(f6i);
+	__fib6_drop_pcpu_from(fib6_nh, f6i, table);
 }
 
 static void fib6_purge_rt(struct fib6_info *rt, struct fib6_node *fn,
@@ -951,8 +940,7 @@ static void fib6_purge_rt(struct fib6_info *rt, struct fib6_node *fn,
 				    lockdep_is_held(&table->tb6_lock));
 		}
 
-		if (rt->rt6i_pcpu)
-			fib6_drop_pcpu_from(rt, table);
+		fib6_drop_pcpu_from(rt, table);
 	}
 }
 
