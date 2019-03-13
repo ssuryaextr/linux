@@ -127,6 +127,10 @@ struct rt6_exception {
 
 struct fib6_nh {
 	struct fib_nh_common	nh_common;
+
+#ifdef CONFIG_IPV6_ROUTER_PREF
+	unsigned long		last_probe;
+#endif
 };
 
 struct fib6_info {
@@ -153,10 +157,6 @@ struct fib6_info {
 	struct rt6key			fib6_prefsrc;
 
 	struct rt6_info * __percpu	*rt6i_pcpu;
-
-#ifdef CONFIG_IPV6_ROUTER_PREF
-	unsigned long			last_probe;
-#endif
 
 	u32				fib6_metric;
 	u8				fib6_protocol;

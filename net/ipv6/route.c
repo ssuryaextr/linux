@@ -520,11 +520,10 @@ static void rt6_probe_deferred(struct work_struct *w)
 	kfree(work);
 }
 
-static void rt6_probe(struct fib6_info *rt)
+static void rt6_probe(struct fib6_nh *nh)
 {
 	struct __rt6_probe_work *work = NULL;
 	const struct in6_addr *nh_gw;
-	const struct fib6_nh *nh;
 	struct neighbour *neigh;
 	struct net_device *dev;
 	struct inet6_dev *idev;
@@ -537,10 +536,9 @@ static void rt6_probe(struct fib6_info *rt)
 	 * Router Reachability Probe MUST be rate-limited
 	 * to no more than one per minute.
 	 */
-	if (!rt || !fib6_info_has_gw(rt))
+	if (!nh->fib_nh_has_gw)
 		return;
 
-	nh = fib6_info_nh(rt);
 	nh_gw = &nh->fib_nh_gw6;
 	dev = nh->fib_nh_dev;
 	rcu_read_lock_bh();
@@ -559,13 +557,13 @@ static void rt6_probe(struct fib6_info *rt)
 				__neigh_set_probe_once(neigh);
 		}
 		write_unlock(&neigh->lock);
-	} else if (time_after(jiffies, rt->last_probe +
+	} else if (time_after(jiffies, nh->last_probe +
 				       idev->cnf.rtr_probe_interval)) {
 		work = kmalloc(sizeof(*work), GFP_ATOMIC);
 	}
 
 	if (work) {
-		rt->last_probe = jiffies;
+		nh->last_probe = jiffies;
 		INIT_WORK(&work->work, rt6_probe_deferred);
 		work->target = *nh_gw;
 		dev_hold(dev);
@@ -577,7 +575,7 @@ out:
 	rcu_read_unlock_bh();
 }
 #else
-static inline void rt6_probe(struct fib6_info *rt)
+static inline void rt6_probe(struct fib6_nh *nh)
 {
 }
 #endif
@@ -638,7 +636,7 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
 				   int *mpri, struct fib6_info *match,
 				   bool *do_rr)
 {
-	const struct fib6_nh *fib6_nh = fib6_info_nh(rt);
+	struct fib6_nh *fib6_nh = fib6_info_nh(rt);
 	int m;
 	bool match_do_rr = false;
 
@@ -662,7 +660,7 @@ static struct fib6_info *find_match(struct fib6_info *rt, int oif, int strict,
 	}
 
 	if (strict & RT6_LOOKUP_F_REACHABLE)
-		rt6_probe(rt);
+		rt6_probe(fib6_nh);
 
 	/* note that m can be RT6_NUD_FAIL_PROBE at this point */
 	if (m > *mpri) {
