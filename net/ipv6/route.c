@@ -110,9 +110,9 @@ static int rt6_fill_node(struct net *net, struct sk_buff *skb,
 			 struct in6_addr *dest, struct in6_addr *src,
 			 int iif, int type, u32 portid, u32 seq,
 			 unsigned int flags);
-static struct rt6_info *rt6_find_cached_rt(struct fib6_info *rt,
-					   struct in6_addr *daddr,
-					   struct in6_addr *saddr);
+static struct rt6_info *rt6_find_cached_rt(struct fib6_result *res,
+					   const struct in6_addr *daddr,
+					   const struct in6_addr *saddr);
 
 #ifdef CONFIG_IPV6_ROUTE_INFO
 static struct fib6_info *rt6_add_route_info(struct net *net,
@@ -1098,7 +1098,7 @@ restart:
 	fib6_select_path(net, &res, fl6, fl6->flowi6_oif, skb, flags);
 
 	/* Search through exception table */
-	rt = rt6_find_cached_rt(res.f6i, &fl6->daddr, &fl6->saddr);
+	rt = rt6_find_cached_rt(&res, &fl6->daddr, &fl6->saddr);
 	if (rt) {
 		if (ip6_hold_safe(net, &rt))
 			dst_use_noref(&rt->dst, jiffies);
@@ -1556,16 +1556,15 @@ void rt6_flush_exceptions(struct fib6_info *f6i)
 /* Find cached rt in the hash table inside passed in rt
  * Caller has to hold rcu_read_lock()
  */
-static struct rt6_info *rt6_find_cached_rt(struct fib6_info *rt,
-					   struct in6_addr *daddr,
-					   struct in6_addr *saddr)
+static struct rt6_info *rt6_find_cached_rt(struct fib6_result *res,
+					   const struct in6_addr *daddr,
+					   const struct in6_addr *saddr)
 {
-	struct fib6_nh *nh = fib6_info_nh(rt);
-	struct fib_nh_common *nhc = &nh->nh_common;
+	struct fib_nh_common *nhc = &res->nh->nh_common;
+	const struct in6_addr *src_key = NULL;
 	struct rt6_exception_bucket *bucket;
-	struct in6_addr *src_key = NULL;
 	struct rt6_exception *rt6_ex;
-	struct rt6_info *res = NULL;
+	struct rt6_info *ret = NULL;
 
 	bucket = rcu_dereference(nhc->nhc_exceptions);
 
@@ -1576,15 +1575,15 @@ static struct rt6_info *rt6_find_cached_rt(struct fib6_info *rt,
 	 * Otherwise, the exception table is indexed by
 	 * a hash of only rt6i_dst.
 	 */
-	if (rt->fib6_src.plen)
+	if (res->f6i->fib6_src.plen)
 		src_key = saddr;
 #endif
 	rt6_ex = __rt6_find_exception_rcu(&bucket, daddr, src_key);
 
 	if (rt6_ex && !rt6_check_expired(rt6_ex->rt6i))
-		res = rt6_ex->rt6i;
+		ret = rt6_ex->rt6i;
 
-	return res;
+	return ret;
 }
 
 static int fib6_nh_remove_exception(struct fib6_nh *nh, int plen,
@@ -1912,7 +1911,7 @@ struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
 	fib6_select_path(net, &res, fl6, oif, skb, strict);
 
 	/*Search through exception table */
-	rt = rt6_find_cached_rt(res.f6i, &fl6->daddr, &fl6->saddr);
+	rt = rt6_find_cached_rt(&res, &fl6->daddr, &fl6->saddr);
 	if (rt) {
 		if (ip6_hold_safe(net, &rt))
 			dst_use_noref(&rt->dst, jiffies);
@@ -2469,9 +2468,12 @@ static bool ip6_redirect_nh_match(struct fib6_info *f6i,
 	 * is different.
 	 */
 	if (!ipv6_addr_equal(gw, &nh->fib_nh_gw6)) {
+		struct fib6_result res = {
+			.f6i = f6i,
+		};
 		struct rt6_info *rt_cache;
 
-		rt_cache = rt6_find_cached_rt(f6i, &fl6->daddr, &fl6->saddr);
+		rt_cache = rt6_find_cached_rt(&res, &fl6->daddr, &fl6->saddr);
 		if (rt_cache &&
 		    ipv6_addr_equal(gw, &rt_cache->rt6i_gateway)) {
 			*ret = rt_cache;
@@ -3347,9 +3349,13 @@ static int ip6_route_del(struct fib6_config *cfg,
 			struct fib6_nh *nh;
 
 			if (cfg->fc_flags & RTF_CACHE) {
+				struct fib6_result res = {
+					.f6i = rt,
+				};
 				int rc;
 
-				rt_cache = rt6_find_cached_rt(rt, &cfg->fc_dst,
+				rt_cache = rt6_find_cached_rt(&res,
+							      &cfg->fc_dst,
 							      &cfg->fc_src);
 				if (rt_cache) {
 					rc = ip6_del_cached_rt(rt_cache, cfg);
