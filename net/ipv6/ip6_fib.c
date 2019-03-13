@@ -174,15 +174,8 @@ struct fib6_info *fib6_info_alloc(gfp_t gfp_flags, bool with_fib6_nh)
 void fib6_info_destroy_rcu(struct rcu_head *head)
 {
 	struct fib6_info *f6i = container_of(head, struct fib6_info, rcu);
-	struct rt6_exception_bucket *bucket;
 
 	WARN_ON(f6i->fib6_node);
-
-	bucket = rcu_dereference_protected(f6i->rt6i_exception_bucket, 1);
-	if (bucket) {
-		f6i->rt6i_exception_bucket = NULL;
-		kfree(bucket);
-	}
 
 	if (f6i->rt6i_pcpu) {
 		int cpu;

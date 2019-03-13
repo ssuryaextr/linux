@@ -84,7 +84,8 @@ struct fib_nh_common {
 	unsigned char		nhc_scope;
 	u8			nhc_family;
 	u8			nhc_has_gw:1,
-				unused:7;
+				nhc_exceptions_flushed:1,
+				unused:6;
 	union {
 		__be32          ipv4;
 		struct in6_addr ipv6;
@@ -96,6 +97,7 @@ struct fib_nh_common {
 	/* v4 specific, but allows v6 gw with v4 routes */
 	struct rtable __rcu * __percpu *nhc_pcpu_rth_output;
 	struct rtable __rcu     *nhc_rth_input;
+	void __rcu		*nhc_exceptions;
 };
 
 struct fib_nh {
